@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>vLLM Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <style>
+        :root { --pad:16px; }
+        body { font-family: ui-sans-serif, system-ui; margin:20px; }
+        .grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto auto auto; gap:16px; }
+        .card { border:1px solid #ddd; border-radius:12px; padding:var(--pad); box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+        input, select, textarea, button { padding:8px; border-radius:8px; border:1px solid #bbb; }
+        #generate, #results { grid-column:1 / span 2; }
+        .row { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+        .stack > * { display:block; margin-top:8px; }
+        .fieldset { border:1px dashed #ccc; border-radius:8px; padding:10px; }
+        #progressBox { height:160px; overflow:auto; white-space:pre; background:#0b1020; color:#d6f0ff; padding:10px; border-radius:8px; border:1px solid #223; }
+        #status { white-space:pre-wrap; background:#fafafa; padding:10px; border-radius:8px; border:1px solid #eee; max-height:220px; overflow:auto; }
+        #resultBox { height:420px; overflow:auto; white-space:pre-wrap; background:#fafafa; padding:10px; border-radius:8px; border:1px solid #eee; }
+        .tabbar { display:flex; gap:8px; border-bottom:1px solid #eee; margin-bottom:12px; }
+        .tab-active { background:#111; color:#fff; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .muted { color:#666; }
+        .ok { color: #0a7a0a; }
+        .err { color: #a00; }
+    </style>
+</head>
+<body>
+<h1>vLLM Manager</h1>
+<div class="grid">
+    <div class="card">
+        <h3>Start model</h3>
+        <div class="stack">
+            <div><label>Model name</label><br><input id="mname" size="48" placeholder="Qwen/Qwen2.5-7B-Instruct"/></div>
+            <div><label>GPU (optional)</label><br><input id="gpu" type="number" min="0" style="width:90px;" placeholder="e.g. 0"/></div>
+            <div><label>vLLM config JSON</label><br><textarea id="cfg" rows="10" cols="62" class="mono">__DEFAULT_CFG__</textarea></div>
+            <div class="row">
+                <button onclick="startModel()">Start</button>
+                <form onsubmit="stopWorker(event)">
+                    <input id="s_model" placeholder="model to stop" size="28"/>
+                    <input id="s_gpu" type="number" min="0" style="width:90px;" placeholder="gpu"/>
+                    <button type="submit">Stop</button>
+                </form>
+                <span id="start_msg" class="muted"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Status & Live GPU tail</h3>
+        <div class="row">
+            <button onclick="refresh()">Refresh</button>
+            <select id="workerSel" onchange="switchWorker()"></select>
+        </div>
+        <pre id="status"></pre>
+        <div style="margin-top:8px;">
+            <label class="muted">Live tail (last ~5 lines for selected worker)</label>
+            <pre id="progressBox" class="mono"></pre>
+        </div>
+    </div>
+
+    <div class="card" id="generate">
+        <div class="tabbar">
+            <button id="tabSimple" class="tab-active" onclick="switchTab('simple')">Generate: Simple</button>
+            <button id="tabChat" onclick="switchTab('chat')">Generate: Chat</button>
+        </div>
+
+        <!-- Simple -->
+        <div id="panelSimple">
+            <div class="row">
+                <div class="stack" style="min-width:360px;">
+                    <div class="fieldset">
+                        <label><b>Model</b></label><br><select id="g_model" style="min-width:340px;"></select>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>Sampling params</b></label><br>
+                        <textarea id="g_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
+                    </div>
+                </div>
+                <div class="stack" style="flex:1; min-width:420px;">
+                    <div class="fieldset">
+                        <label><b>Prompts JSON (array of strings)</b></label><br>
+                        <textarea id="g_prompt" rows="10" class="mono" placeholder='["Your prompt..."]'></textarea>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>OR Upload prompts JSON</b></label><br>
+                        <input id="g_file" type="file" accept=".json"/>
+                        <div style="margin-top:8px;"><button onclick="submitSimple()">Generate</button> <span id="g_msg" class="muted"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat -->
+        <div id="panelChat" style="display:none;">
+            <div class="row">
+                <div class="stack" style="min-width:360px;">
+                    <div class="fieldset">
+                        <label><b>Model</b></label><br><select id="c_model" style="min-width:340px;"></select>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>Sampling params</b></label><br>
+                        <textarea id="c_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
+                    </div>
+                </div>
+                <div class="stack" style="flex:1; min-width:460px;">
+                    <div class="fieldset">
+                        <label><b>Messages JSON (array of chat items)</b></label><br>
+                        <textarea id="c_msgs" rows="10" class="mono" placeholder='[{"messages":[{"role":"user","content":"Hi"}],"metadata":{"id":"1"}}]'></textarea>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>OR Upload chat JSON file</b></label><br>
+                        <input id="c_file" type="file" accept=".json"/>
+                        <div style="margin-top:8px;"><button onclick="submitChat()">Generate</button> <span id="c_msg" class="muted"></span></div>
+                    </div>
+                </div>
+                <div class="stack" style="min-width:260px;">
+                    <div class="fieldset">
+                        <label><b>Output field</b></label><br>
+                        <input id="c_outfield" size="20" value="output"/>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" id="results">
+        <h3>Response</h3>
+        <div class="row">
+            <button onclick="saveJSON()">Save as JSON</button>
+            <button onclick="clearResults()">Clear</button>
+        </div>
+        <pre id="resultBox" class="mono"></pre>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
