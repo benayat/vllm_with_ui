@@ -11,6 +11,7 @@ class TailCapture:
         self.lock = threading.Lock()
         self.buf = ""
         self.lines = deque(maxlen=max_keep)
+        self._fallback_stream = sys.__stdout__
 
     def write(self, data: str):
         data = data.replace("\r\n", "\n")
@@ -34,6 +35,14 @@ class TailCapture:
             self.lines.append(text)
 
     def flush(self): pass
+
+    def fileno(self) -> int:
+        if self._fallback_stream is None:
+            raise OSError("No fallback stdout stream available")
+        return self._fallback_stream.fileno()
+
+    def isatty(self) -> bool:
+        return bool(self._fallback_stream and self._fallback_stream.isatty())
 
     def tail(self, n: int = 5) -> List[str]:
         with self.lock:
