@@ -145,6 +145,7 @@ async function stopWorker(e) {
 async function submitSimple() {
     const m = (document.getElementById('g_model_manual').value.trim() || document.getElementById('g_model').value.trim());
     const useOffline = document.getElementById('g_offline').checked;
+    const cleanupModelAfterJob = document.getElementById('g_cleanup_model').checked;
     const autoStart = document.getElementById('g_autostart').checked;
     const sampling = parseJSONSafe(document.getElementById('g_sampling').value, samplingDefault);
     const fileEl = document.getElementById('g_file');
@@ -156,7 +157,7 @@ async function submitSimple() {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
         const payload = useOffline
-            ? { model_name: m, type: 'generate', prompts, sampling }
+            ? { model_name: m, type: 'generate', prompts, sampling, cleanup_model_after_job: cleanupModelAfterJob }
             : { model_name: m, prompts, sampling };
         const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         const j = await res.json(); if (!res.ok) { document.getElementById('g_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
@@ -170,6 +171,7 @@ async function submitSimple() {
 async function submitChat() {
     const m = (document.getElementById('c_model_manual').value.trim() || document.getElementById('c_model').value.trim());
     const useOffline = document.getElementById('c_offline').checked;
+    const cleanupModelAfterJob = document.getElementById('c_cleanup_model').checked;
     const autoStart = document.getElementById('c_autostart').checked;
     const sampling = parseJSONSafe(document.getElementById('c_sampling').value, samplingDefault);
     const outField = document.getElementById('c_outfield').value || "output";
@@ -182,7 +184,7 @@ async function submitChat() {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/chat';
         const payload = useOffline
-            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField }
+            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, cleanup_model_after_job: cleanupModelAfterJob }
             : { model_name: m, prompts, sampling, output_field: outField };
         const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         const j = await res.json(); if (!res.ok) { document.getElementById('c_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
