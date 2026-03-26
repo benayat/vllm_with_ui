@@ -77,7 +77,12 @@ def bind(pool: PoolManager) -> APIRouter:
                 normalized.append({"messages": messages, "metadata": item.get("metadata", {})})
             cmd = {"type": "generate_chat", "prompts": normalized, "sampling": sampling, "output_field": req.output_field}
 
-        job = {"job_id": job_id, "model_name": req.model_name, "cmd": cmd}
+        job = {
+            "job_id": job_id,
+            "model_name": req.model_name,
+            "cmd": cmd,
+            "cleanup_model_after_job": req.cleanup_model_after_job,
+        }
         try:
             jid = pool.submit_offline(job)
             return JSONResponse({"job_id": jid, "status": "queued_offline"}, status_code=202)
