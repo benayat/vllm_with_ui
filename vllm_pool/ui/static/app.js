@@ -21,6 +21,14 @@ function saveJSON(){
     const id = ('job_id' in lastResult) ? lastResult.job_id : 'result'; a.download = `${id}.json`;
     document.body.appendChild(a); a.click(); a.remove();
 }
+async function copyResultToClipboard() {
+    if (!lastResult) { alert("No result to copy yet."); return; }
+    try {
+        await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2));
+    } catch (e) {
+        alert(`Copy failed: ${e.message}`);
+    }
+}
 
 // NEW: polling
 async function pollJob(jobId, onUpdateElId) {
@@ -156,10 +164,12 @@ async function submitSimple() {
     try {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
+        const headers = {'Content-Type':'application/json'};
+        if (useOffline) headers['X-UI-Request'] = '1';
         const payload = useOffline
             ? { model_name: m, type: 'generate', prompts, sampling, cleanup_model_after_job: cleanupModelAfterJob }
             : { model_name: m, prompts, sampling };
-        const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
         const j = await res.json(); if (!res.ok) { document.getElementById('g_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
         document.getElementById('g_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
         pollJob(j.job_id, 'g_msg');
@@ -183,10 +193,12 @@ async function submitChat() {
     try {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/chat';
+        const headers = {'Content-Type':'application/json'};
+        if (useOffline) headers['X-UI-Request'] = '1';
         const payload = useOffline
             ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, cleanup_model_after_job: cleanupModelAfterJob }
             : { model_name: m, prompts, sampling, output_field: outField };
-        const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
         const j = await res.json(); if (!res.ok) { document.getElementById('c_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
         document.getElementById('c_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
         pollJob(j.job_id, 'c_msg');

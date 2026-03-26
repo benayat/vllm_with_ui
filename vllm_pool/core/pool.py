@@ -10,6 +10,7 @@ from time import monotonic
 
 JOB_TTL_SEC = 3600          # keep finished jobs for 1 hour
 JOB_MAX_KEEP = 2000         # cap total tracked jobs
+WORKER_READY_TIMEOUT_SEC = 4 * 60 * 60  # large-model startup can take a long time
 
 
 class PoolManager:
@@ -90,7 +91,7 @@ class PoolManager:
         proc.start()
 
         # wait ready
-        deadline = time.time() + 180
+        deadline = time.time() + WORKER_READY_TIMEOUT_SEC
         pid, err = None, None
         while time.time() < deadline:
             try:
@@ -293,6 +294,13 @@ class PoolManager:
         if rec["status"] == "error":
             view["error"] = rec["error"]
         return view
+
+    def wait_for_job(self, job_id: str, timeout_sec: Optional[float] = None) -> Dict[str, Any]:
+        rec = self.jobs.get(job_id)
+        if not rec:
+            return {"job_id": job_id, "status": "not_found"}
+        rec["event"].wait(timeout=timeout_sec)
+        return self.get_job(job_id)
 
     def cancel_job(self, job_id: str) -> Dict[str, Any]:
         with self.lock:
