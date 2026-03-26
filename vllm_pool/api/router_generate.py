@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from .models import GenerateSimpleRequest, GenerateChatRequest, OfflineJobRequest, SamplingConfigModel
 from ..core.pool import PoolManager
@@ -52,7 +52,7 @@ def bind(pool: PoolManager) -> APIRouter:
             raise HTTPException(status_code=500, detail=f"Failed to enqueue: {e}")
 
     @router.post("/generate/offline")
-    def generate_offline(req: OfflineJobRequest):
+    def generate_offline(req: OfflineJobRequest, request: Request):
         job_id = str(uuid.uuid4())[:8]
         sampling = (req.sampling or SamplingConfigModel()).model_dump()
         kind = req.type.strip().lower()
@@ -77,10 +77,26 @@ def bind(pool: PoolManager) -> APIRouter:
                 normalized.append({"messages": messages, "metadata": item.get("metadata", {})})
             cmd = {"type": "generate_chat", "prompts": normalized, "sampling": sampling, "output_field": req.output_field}
 
-        job = {"job_id": job_id, "model_name": req.model_name, "cmd": cmd}
+        job = {
+            "job_id": job_id,
+            "model_name": req.model_name,
+            "cmd": cmd,
+            "cleanup_model_after_job": req.cleanup_model_after_job,
+        }
         try:
             jid = pool.submit_offline(job)
-            return JSONResponse({"job_id": jid, "status": "queued_offline"}, status_code=202)
+            is_ui_request = request.headers.get("x-ui-request", "").strip() == "1"
+            if is_ui_request:
+                return JSONResponse({"job_id": jid, "status": "queued_offline"}, status_code=202)
+            final = pool.wait_for_job(jid, timeout_sec=None)
+            if final.get("status") == "done":
+                return JSONResponse({"job_id": jid, "status": "done", "result": final.get("result")}, status_code=200)
+            if final.get("status") == "error":
+                return JSONResponse(
+                    {"job_id": jid, "status": "error", "error": final.get("error", "unknown")},
+                    status_code=500,
+                )
+            return JSONResponse({"job_id": jid, "status": final.get("status")}, status_code=202)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to enqueue offline job: {e}")
 

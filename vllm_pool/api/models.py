@@ -44,3 +44,4 @@ class OfflineJobRequest(BaseModel):
     prompts: List[Any]
     sampling: Optional[SamplingConfigModel] = None
     output_field: str = "output"
+    cleanup_model_after_job: bool = False
