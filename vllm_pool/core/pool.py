@@ -10,6 +10,7 @@ from time import monotonic
 
 JOB_TTL_SEC = 3600          # keep finished jobs for 1 hour
 JOB_MAX_KEEP = 2000         # cap total tracked jobs
+WORKER_READY_TIMEOUT_SEC = 4 * 60 * 60  # large-model startup can take a long time
 
 
 class PoolManager:
@@ -90,7 +91,7 @@ class PoolManager:
         proc.start()
 
         # wait ready
-        deadline = time.time() + 180
+        deadline = time.time() + WORKER_READY_TIMEOUT_SEC
         pid, err = None, None
         while time.time() < deadline:
             try:
@@ -137,24 +138,32 @@ class PoolManager:
             elif typ == "result":
                 job_id = msg.get("job_id")
                 rec = self.jobs.get(job_id)
+                should_cleanup_model = False
                 if rec:
                     rec["status"] = "done"
                     rec["result"] = msg.get("result")
                     rec["done_at"] = monotonic()
                     rec["event"].set()
+                    should_cleanup_model = rec.get("cleanup_model_after_job", False)
                 self.busy[(model, gpu_id)] = False
                 self._dispatch_next(model)
+                if should_cleanup_model:
+                    self._cleanup_model_if_idle(model, gpu_id)
                 self._maybe_cleanup_jobs()
             elif typ == "error":
                 job_id = msg.get("job_id")
                 rec = self.jobs.get(job_id)
+                should_cleanup_model = False
                 if rec:
                     rec["status"] = "error"
                     rec["error"] = msg.get("error", "unknown")
                     rec["done_at"] = monotonic()
                     rec["event"].set()
+                    should_cleanup_model = rec.get("cleanup_model_after_job", False)
                 self.busy[(model, gpu_id)] = False
                 self._dispatch_next(model)
+                if should_cleanup_model:
+                    self._cleanup_model_if_idle(model, gpu_id)
                 self._maybe_cleanup_jobs()
             elif typ == "stopped":
                 self._broadcast_tail(key, ["[worker stopped]"])
@@ -211,6 +220,7 @@ class PoolManager:
         rec = self.jobs.get(job["job_id"])
         if rec:
             rec["status"] = "running"
+            rec["cleanup_model_after_job"] = bool(job.get("cleanup_model_after_job", False))
         cmd = job["cmd"]
         cmd["job_id"] = job["job_id"]
         info["cmd_q"].put(cmd)
@@ -285,6 +295,13 @@ class PoolManager:
             view["error"] = rec["error"]
         return view
 
+    def wait_for_job(self, job_id: str, timeout_sec: Optional[float] = None) -> Dict[str, Any]:
+        rec = self.jobs.get(job_id)
+        if not rec:
+            return {"job_id": job_id, "status": "not_found"}
+        rec["event"].wait(timeout=timeout_sec)
+        return self.get_job(job_id)
+
     def cancel_job(self, job_id: str) -> Dict[str, Any]:
         with self.lock:
             rec = self.jobs.get(job_id)
@@ -334,6 +351,15 @@ class PoolManager:
                 break
             self._job_order.popleft()
             self.jobs.pop(jid, None)
+
+    def _cleanup_model_if_idle(self, model: str, gpu_id: int) -> None:
+        if self.busy.get((model, gpu_id), False):
+            return
+        if (self.queues.get(model) or []):
+            return
+        if (model, gpu_id) not in self.workers:
+            return
+        self.stop(model, gpu_id)
 
     # ---- worker watchdog
     def _watchdog_loop(self):
