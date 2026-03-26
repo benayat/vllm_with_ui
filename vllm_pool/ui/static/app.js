@@ -91,6 +91,31 @@ function openSSE(url) {
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
 async function readFileAsJSON(inputEl) { const f = inputEl.files && inputEl.files[0]; if (!f) return null; return JSON.parse(await f.text()); }
 
+async function ensureModelLoaded(modelName, autoStartEnabled) {
+    if (!autoStartEnabled) return;
+    const modelsRes = await fetch('/models');
+    const modelsJson = await modelsRes.json();
+    if ((modelsJson.models || []).includes(modelName)) return;
+
+    const cfgText = document.getElementById('cfg').value;
+    const cfg = parseJSONSafe(cfgText, null);
+    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+        throw new Error('Start panel vLLM config JSON is invalid.');
+    }
+
+    const gtxt = document.getElementById('gpu').value.trim();
+    const gpu = gtxt === "" ? null : Number(gtxt);
+    const startBody = { model_name: modelName, config: cfg, gpu_id: gpu };
+    const startRes = await fetch('/start', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(startBody),
+    });
+    const startJson = await startRes.json();
+    if (!startRes.ok) throw new Error(startJson.detail || `Failed to auto-start model ${modelName}`);
+    await refresh();
+}
+
 async function startModel() {
     const m = document.getElementById('mname').value.trim();
     const gtxt = document.getElementById('gpu').value.trim();
@@ -120,25 +145,32 @@ async function stopWorker(e) {
 async function submitSimple() {
     const m = (document.getElementById('g_model_manual').value.trim() || document.getElementById('g_model').value.trim());
     const useOffline = document.getElementById('g_offline').checked;
+    const autoStart = document.getElementById('g_autostart').checked;
     const sampling = parseJSONSafe(document.getElementById('g_sampling').value, samplingDefault);
     const fileEl = document.getElementById('g_file');
     let prompts = parseJSONSafe(document.getElementById('g_prompt').value, []);
     const fromFile = await readFileAsJSON(fileEl); if (fromFile) prompts = fromFile;
     if (!m) { document.getElementById('g_msg').innerHTML = '<span class="err">Model is required.</span>'; return; }
     if (!Array.isArray(prompts)) { document.getElementById('g_msg').innerHTML = '<span class="err">Prompts must be an array of strings.</span>'; return; }
-    const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
-    const payload = useOffline
-        ? { model_name: m, type: 'generate', prompts, sampling }
-        : { model_name: m, prompts, sampling };
-    const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const j = await res.json(); if (!res.ok) { document.getElementById('g_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
-    document.getElementById('g_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
-    pollJob(j.job_id, 'g_msg');
+    try {
+        if (useOffline) await ensureModelLoaded(m, autoStart);
+        const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
+        const payload = useOffline
+            ? { model_name: m, type: 'generate', prompts, sampling }
+            : { model_name: m, prompts, sampling };
+        const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const j = await res.json(); if (!res.ok) { document.getElementById('g_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
+        document.getElementById('g_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
+        pollJob(j.job_id, 'g_msg');
+    } catch (e) {
+        document.getElementById('g_msg').innerHTML = `<span class="err">${e.message}</span>`;
+    }
 }
 
 async function submitChat() {
     const m = (document.getElementById('c_model_manual').value.trim() || document.getElementById('c_model').value.trim());
     const useOffline = document.getElementById('c_offline').checked;
+    const autoStart = document.getElementById('c_autostart').checked;
     const sampling = parseJSONSafe(document.getElementById('c_sampling').value, samplingDefault);
     const outField = document.getElementById('c_outfield').value || "output";
     const fileEl = document.getElementById('c_file');
@@ -146,14 +178,19 @@ async function submitChat() {
     const fromFile = await readFileAsJSON(fileEl); if (fromFile) prompts = fromFile;
     if (!m) { document.getElementById('c_msg').innerHTML = '<span class="err">Model is required.</span>'; return; }
     if (!Array.isArray(prompts)) { document.getElementById('c_msg').innerHTML = '<span class="err">Chat must be an array of items.</span>'; return; }
-    const endpoint = useOffline ? '/generate/offline' : '/generate/chat';
-    const payload = useOffline
-        ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField }
-        : { model_name: m, prompts, sampling, output_field: outField };
-    const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const j = await res.json(); if (!res.ok) { document.getElementById('c_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
-    document.getElementById('c_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
-    pollJob(j.job_id, 'c_msg');
+    try {
+        if (useOffline) await ensureModelLoaded(m, autoStart);
+        const endpoint = useOffline ? '/generate/offline' : '/generate/chat';
+        const payload = useOffline
+            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField }
+            : { model_name: m, prompts, sampling, output_field: outField };
+        const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const j = await res.json(); if (!res.ok) { document.getElementById('c_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
+        document.getElementById('c_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
+        pollJob(j.job_id, 'c_msg');
+    } catch (e) {
+        document.getElementById('c_msg').innerHTML = `<span class="err">${e.message}</span>`;
+    }
 }
 
 refresh();

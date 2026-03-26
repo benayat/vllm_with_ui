@@ -129,6 +129,7 @@ Open the UI at `http://localhost:8000`.
         * **Output field** name (e.g., `"output"`).
     * Results appear below; click **Save as JSON**.
     * For both tabs, you can tick **Submit via offline queue endpoint** to send to `POST /generate/offline` instead of the regular generate endpoints.
+    * You can also keep **Auto-start model if missing** enabled so the UI will call `/start` using the Start panel's vLLM config JSON (defaults shown there) before queue submission.
 
 > The Generate panel **never** starts models. If the model isn’t running: API returns **409**.
 
