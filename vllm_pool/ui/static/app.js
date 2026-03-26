@@ -118,29 +118,41 @@ async function stopWorker(e) {
 }
 
 async function submitSimple() {
-    const m = document.getElementById('g_model').value.trim();
+    const m = (document.getElementById('g_model_manual').value.trim() || document.getElementById('g_model').value.trim());
+    const useOffline = document.getElementById('g_offline').checked;
     const sampling = parseJSONSafe(document.getElementById('g_sampling').value, samplingDefault);
     const fileEl = document.getElementById('g_file');
     let prompts = parseJSONSafe(document.getElementById('g_prompt').value, []);
     const fromFile = await readFileAsJSON(fileEl); if (fromFile) prompts = fromFile;
+    if (!m) { document.getElementById('g_msg').innerHTML = '<span class="err">Model is required.</span>'; return; }
     if (!Array.isArray(prompts)) { document.getElementById('g_msg').innerHTML = '<span class="err">Prompts must be an array of strings.</span>'; return; }
-    const res = await fetch('/generate/simple', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model_name:m, prompts, sampling }) });
+    const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
+    const payload = useOffline
+        ? { model_name: m, type: 'generate', prompts, sampling }
+        : { model_name: m, prompts, sampling };
+    const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     const j = await res.json(); if (!res.ok) { document.getElementById('g_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
-    document.getElementById('g_msg').innerHTML = `<span class="ok">queued (job ${j.job_id})</span>`;
+    document.getElementById('g_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
     pollJob(j.job_id, 'g_msg');
 }
 
 async function submitChat() {
-    const m = document.getElementById('c_model').value.trim();
+    const m = (document.getElementById('c_model_manual').value.trim() || document.getElementById('c_model').value.trim());
+    const useOffline = document.getElementById('c_offline').checked;
     const sampling = parseJSONSafe(document.getElementById('c_sampling').value, samplingDefault);
     const outField = document.getElementById('c_outfield').value || "output";
     const fileEl = document.getElementById('c_file');
     let prompts = parseJSONSafe(document.getElementById('c_msgs').value, []);
     const fromFile = await readFileAsJSON(fileEl); if (fromFile) prompts = fromFile;
+    if (!m) { document.getElementById('c_msg').innerHTML = '<span class="err">Model is required.</span>'; return; }
     if (!Array.isArray(prompts)) { document.getElementById('c_msg').innerHTML = '<span class="err">Chat must be an array of items.</span>'; return; }
-    const res = await fetch('/generate/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model_name:m, prompts, sampling, output_field: outField }) });
+    const endpoint = useOffline ? '/generate/offline' : '/generate/chat';
+    const payload = useOffline
+        ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField }
+        : { model_name: m, prompts, sampling, output_field: outField };
+    const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     const j = await res.json(); if (!res.ok) { document.getElementById('c_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
-    document.getElementById('c_msg').innerHTML = `<span class="ok">queued (job ${j.job_id})</span>`;
+    document.getElementById('c_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
     pollJob(j.job_id, 'c_msg');
 }
 

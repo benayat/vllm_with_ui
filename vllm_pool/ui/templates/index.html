@@ -71,6 +71,13 @@
                 <div class="stack" style="min-width:360px;">
                     <div class="fieldset">
                         <label><b>Model</b></label><br><select id="g_model" style="min-width:340px;"></select>
+                        <div style="margin-top:8px;">
+                            <label class="muted">Or type model id (works with offline queue)</label><br>
+                            <input id="g_model_manual" size="42" placeholder="meta-llama/Llama-3.2-1B-Instruct"/>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <label><input id="g_offline" type="checkbox"/> Submit via offline queue endpoint</label>
+                        </div>
                     </div>
                     <div class="fieldset">
                         <label><b>Sampling params</b></label><br>
@@ -97,6 +104,13 @@
                 <div class="stack" style="min-width:360px;">
                     <div class="fieldset">
                         <label><b>Model</b></label><br><select id="c_model" style="min-width:340px;"></select>
+                        <div style="margin-top:8px;">
+                            <label class="muted">Or type model id (works with offline queue)</label><br>
+                            <input id="c_model_manual" size="42" placeholder="meta-llama/Llama-3.2-1B-Instruct"/>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <label><input id="c_offline" type="checkbox"/> Submit via offline queue endpoint</label>
+                        </div>
                     </div>
                     <div class="fieldset">
                         <label><b>Sampling params</b></label><br>

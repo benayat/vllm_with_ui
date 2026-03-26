@@ -20,6 +20,7 @@ Object-oriented core (Python) split into domain types, worker, pool, and an adap
 
     * **Simple**: array of strings.
     * **Chat**: array of chat items `{messages:[{role, content}], metadata?}`.
+* ✅ **Offline mode job intake**: accept generation/chat jobs even before a model is loaded; jobs stay queued and dispatch once the target model starts.
 * ✅ Editable **vLLM resource config** JSON (defaults shown in UI).
 * ✅ JSON responses + “Save as JSON” in the UI.
 * ✅ Clean OOD design; core logic independent of the web layer.
@@ -127,6 +128,7 @@ Open the UI at `http://localhost:8000`.
         * Provide **Messages JSON** (array of chat items) or **Upload**.
         * **Output field** name (e.g., `"output"`).
     * Results appear below; click **Save as JSON**.
+    * For both tabs, you can tick **Submit via offline queue endpoint** to send to `POST /generate/offline` instead of the regular generate endpoints.
 
 > The Generate panel **never** starts models. If the model isn’t running: API returns **409**.
 
@@ -230,6 +232,26 @@ Response:
 ```json
 { "job_id": "f00dbabe", "result": [ {"id":"1", "output":"..."} ] }
 ```
+
+### Generate (Offline Queue)
+
+```
+POST /generate/offline
+Content-Type: application/json
+```
+
+```json
+{
+  "model_name": "meta-llama/Llama-3.2-1B-Instruct",
+  "type": "generate",
+  "prompts": ["Hello", "Give me a haiku about CUDA"]
+}
+```
+
+* `type: "generate"` expects `prompts` as an array of strings.
+* `type: "chat"` expects `prompts` as chat items (`[{messages:[{role, content}], metadata?}]`).
+* `sampling` is optional; if omitted the default sampling values are used.
+* Response: `202` with `{ "job_id": "...", "status": "queued_offline" }`.
 
 ### Per-worker SSE tail
 

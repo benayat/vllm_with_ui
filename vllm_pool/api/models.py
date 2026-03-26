@@ -36,3 +36,11 @@ class GenerateChatRequest(BaseModel):
     prompts: List[ChatItem]
     sampling: SamplingConfigModel
     output_field: str = "output"
+
+
+class OfflineJobRequest(BaseModel):
+    model_name: str
+    type: str  # generate | chat
+    prompts: List[Any]
+    sampling: Optional[SamplingConfigModel] = None
+    output_field: str = "output"

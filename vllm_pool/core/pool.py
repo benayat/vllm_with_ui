@@ -171,8 +171,10 @@ class PoolManager:
                 raise RuntimeError(f"GPU {gid} is not empty.")
             existing = self.workers.get((model, gid))
             if existing:
+                self._dispatch_next(model)
                 return model, gid, existing["pid"]
             info = self._spawn_worker(model, cfg, gid)
+            self._dispatch_next(model)
             return model, gid, info["pid"]
 
     def stop(self, model: str, gpu_id: int) -> str:
@@ -206,6 +208,9 @@ class PoolManager:
     def _send(self, job: Dict[str, Any], gpu_id: int):
         info = self.workers[(job["model_name"], gpu_id)]
         self.busy[(job["model_name"], gpu_id)] = True
+        rec = self.jobs.get(job["job_id"])
+        if rec:
+            rec["status"] = "running"
         cmd = job["cmd"]
         cmd["job_id"] = job["job_id"]
         info["cmd_q"].put(cmd)
@@ -225,6 +230,27 @@ class PoolManager:
             self._ensure_queue(model)
             self.queues[model].append(job)
             # try dispatch immediately
+            self._dispatch_next(model)
+            self._maybe_cleanup_jobs()
+            return job_id
+
+    def submit_offline(self, job: Dict[str, Any]) -> str:
+        model = job["model_name"]
+        with self.lock:
+            ev = threading.Event()
+            job_id = job.get("job_id") or str(uuid.uuid4())[:8]
+            job["job_id"] = job_id
+            rec = {
+                "status": "queued_offline",
+                "result": None,
+                "error": None,
+                "event": ev,
+                "created_at": monotonic(),
+            }
+            self.jobs[job_id] = rec
+            self._job_order.append(job_id)
+            self._ensure_queue(model)
+            self.queues[model].append(job)
             self._dispatch_next(model)
             self._maybe_cleanup_jobs()
             return job_id
