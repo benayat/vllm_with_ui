@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: vllm-pool
+Version: 0.1.0
+Summary: vLLM pool with per-GPU SSE tails and clean model/generate separation
+Requires-Python: >=3.10
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: pydantic>=2.7.0
+Requires-Dist: torch>=2.1.0
+Requires-Dist: vllm>=0.5.3

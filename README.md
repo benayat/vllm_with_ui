@@ -87,7 +87,7 @@ pip install -e .  # uses pyproject.toml; installs fastapi, uvicorn, vllm, torch
 ---
 
 ## Running
-
+### Basic run:
 ```bash
 uvicorn vllm_pool.main:app --host 0.0.0.0 --port 8000
 # or
@@ -96,6 +96,12 @@ uvicorn vllm_pool.main:app --host 0.0.0.0 --port 8000
 
 Open the UI at `http://localhost:8000`.
 
+### HPC:
+- Same as basic, then create a reverse ssh tunnel from the local PC: 
+```bash
+ssh -J slurm -N -L <remote port>:localhost:<local port> <username>@<compute node>
+```
+- then just open <localhost:local port> from browser.
 ---
 
 ## UI Workflow
@@ -362,6 +368,8 @@ Suggested tests (pytest):
 * Routers with FastAPI `TestClient`.
 
 ---
+
+
 
 ## License
 
