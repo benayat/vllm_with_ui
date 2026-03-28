@@ -99,7 +99,7 @@ Open the UI at `http://localhost:8000`.
 ### HPC:
 - Same as basic, then create a reverse ssh tunnel from the local PC: 
 ```bash
-ssh -J slurm -N -L <remote port>:localhost:<local port> <username>@<compute node>
+ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compute node>
 ```
 - then just open <localhost:local port> from browser.
 ---
