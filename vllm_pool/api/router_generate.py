@@ -41,6 +41,7 @@ def bind(pool: PoolManager) -> APIRouter:
                 "prompts": prompts,
                 "sampling": req.sampling.model_dump(),
                 "output_field": req.output_field,
+                "include_metadata": req.include_metadata,
             },
         }
         try:
@@ -75,7 +76,13 @@ def bind(pool: PoolManager) -> APIRouter:
                     if not isinstance(m, dict) or "role" not in m or "content" not in m:
                         raise HTTPException(status_code=422, detail="each chat message must include role and content")
                 normalized.append({"messages": messages, "metadata": item.get("metadata", {})})
-            cmd = {"type": "generate_chat", "prompts": normalized, "sampling": sampling, "output_field": req.output_field}
+            cmd = {
+                "type": "generate_chat",
+                "prompts": normalized,
+                "sampling": sampling,
+                "output_field": req.output_field,
+                "include_metadata": req.include_metadata,
+            }
 
         job = {
             "job_id": job_id,

@@ -71,7 +71,13 @@ class LLMClient:
         outs = self.llm.generate(prompts, sampling_params=params, use_tqdm=True)
         return [{prompts[i]: out.outputs[0].text.strip()} for i, out in enumerate(outs)]
 
-    def generate_chat(self, prompts: List[Dict[str, Any]], sc: SamplingConfig, output_field: str = "output") -> List[Dict]:
+    def generate_chat(
+        self,
+        prompts: List[Dict[str, Any]],
+        sc: SamplingConfig,
+        output_field: str = "output",
+        include_metadata: bool = True,
+    ) -> List[Dict]:
         params = SamplingParams(
             temperature=sc.temperature,
             top_p=sc.top_p,
@@ -89,7 +95,7 @@ class LLMClient:
             )
             return [
                 {
-                    **prompts[i].get("metadata", {}),
+                    **(prompts[i].get("metadata", {}) if include_metadata else {}),
                     output_field: self._post_process_output(outs[i].outputs[0].text.strip()),
                 }
                 for i in range(len(outs))
@@ -98,7 +104,7 @@ class LLMClient:
             logging.exception("Error in generate_chat")
             return [
                 {
-                    **prompts[i].get("metadata", {}),
+                    **(prompts[i].get("metadata", {}) if include_metadata else {}),
                     output_field: f"[ERROR] {str(e)}",
                 }
                 for i in range(len(prompts))
