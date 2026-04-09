@@ -97,6 +97,22 @@ function openSSE(url) {
 }
 
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
+
+function validateStartConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+        throw new Error('Start panel vLLM config JSON must be an object.');
+    }
+    if ('use_transformers' in cfg) {
+        throw new Error("Config contract changed: remove 'use_transformers' and set 'model_impl' to 'vllm' or 'transformers'.");
+    }
+    if (!('model_impl' in cfg)) {
+        throw new Error("Start panel vLLM config JSON must include 'model_impl' ('vllm' or 'transformers').");
+    }
+    if (!['vllm', 'transformers'].includes(cfg.model_impl)) {
+        throw new Error("'model_impl' must be either 'vllm' or 'transformers'.");
+    }
+    return cfg;
+}
 async function readFileAsJSON(inputEl) { const f = inputEl.files && inputEl.files[0]; if (!f) return null; return JSON.parse(await f.text()); }
 
 function enableTabPlaceholderCompletion() {
@@ -129,10 +145,7 @@ async function ensureModelLoaded(modelName, autoStartEnabled) {
     if ((modelsJson.models || []).includes(modelName)) return;
 
     const cfgText = document.getElementById('cfg').value;
-    const cfg = parseJSONSafe(cfgText, null);
-    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
-        throw new Error('Start panel vLLM config JSON is invalid.');
-    }
+    const cfg = validateStartConfig(parseJSONSafe(cfgText, null));
 
     const gtxt = document.getElementById('gpu').value.trim();
     const gpu = gtxt === "" ? null : Number(gtxt);
@@ -154,7 +167,7 @@ async function startModel() {
     const cfgTxt = document.getElementById('cfg').value;
     const msg = document.getElementById('start_msg'); msg.textContent='...';
     try {
-        const body = { model_name: m, config: parseJSONSafe(cfgTxt, {}), gpu_id: gpu };
+        const body = { model_name: m, config: validateStartConfig(parseJSONSafe(cfgTxt, null)), gpu_id: gpu };
         const res = await fetch('/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
         const j = await res.json(); if (!res.ok) throw new Error(j.detail || JSON.stringify(j));
         msg.innerHTML = `<span class="ok">started ${j.model_name} on gpu ${j.gpu_id} (pid ${j.pid})</span>`;

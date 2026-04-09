@@ -1,6 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Form
-from .models import StartRequest, StartResponse
+from .models import StartRequest, StartResponse, LLMResourceConfigModel
 from ..core.pool import PoolManager
 from ..core.config import DEFAULT_CFG
 
@@ -9,7 +9,8 @@ router = APIRouter()
 def bind(pool: PoolManager) -> APIRouter:
     @router.post("/start", response_model=StartResponse)
     def start_worker(req: StartRequest):
-        cfg = req.config or DEFAULT_CFG.to_vllm_kwargs()
+        cfg_model = req.config or LLMResourceConfigModel.model_validate(DEFAULT_CFG.to_vllm_kwargs())
+        cfg = cfg_model.model_dump(exclude_none=True)
         try:
             model, gpu, pid = pool.start(req.model_name, cfg, req.gpu_id)
             return StartResponse(model_name=model, gpu_id=gpu, pid=pid, status="ready")
