@@ -45,8 +45,9 @@ class SamplingConfigModel(BaseModel):
 
 class GenerateSimpleRequest(BaseModel):
     model_name: str
-    prompts: List[str] | str
+    prompts: List[Dict[str, Any]]
     sampling: SamplingConfigModel
+    include_metadata: bool = True
 
 
 class ChatMessage(BaseModel):

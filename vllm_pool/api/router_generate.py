@@ -11,12 +11,22 @@ router = APIRouter()
 def bind(pool: PoolManager) -> APIRouter:
     @router.post("/generate/simple")
     def generate_simple(req: GenerateSimpleRequest):
-        prompts = req.prompts if isinstance(req.prompts, list) else [req.prompts]
+        prompts = []
+        for item in req.prompts:
+            prompt = item.get("prompt") if isinstance(item, dict) else None
+            if not isinstance(prompt, str):
+                raise HTTPException(status_code=422, detail="each simple prompt item must include string field 'prompt'")
+            prompts.append({"prompt": prompt, "metadata": item.get("metadata", {})})
         job_id = str(uuid.uuid4())[:8]
         job = {
             "job_id": job_id,
             "model_name": req.model_name,
-            "cmd": {"type": "generate_simple", "prompts": prompts, "sampling": req.sampling.model_dump()},
+            "cmd": {
+                "type": "generate_simple",
+                "prompts": prompts,
+                "sampling": req.sampling.model_dump(),
+                "include_metadata": req.include_metadata,
+            },
         }
         try:
             jid = pool.submit(job)
@@ -61,9 +71,20 @@ def bind(pool: PoolManager) -> APIRouter:
             raise HTTPException(status_code=422, detail="type must be 'generate' or 'chat'")
 
         if kind == "generate":
-            if not all(isinstance(p, str) for p in req.prompts):
-                raise HTTPException(status_code=422, detail="generate prompts must be an array of strings")
-            cmd = {"type": "generate_simple", "prompts": req.prompts, "sampling": sampling}
+            normalized = []
+            for item in req.prompts:
+                if not isinstance(item, dict) or "prompt" not in item:
+                    raise HTTPException(status_code=422, detail="generate prompts must be an array of {prompt, metadata?}")
+                prompt = item.get("prompt")
+                if not isinstance(prompt, str):
+                    raise HTTPException(status_code=422, detail="each generate prompt must include string field 'prompt'")
+                normalized.append({"prompt": prompt, "metadata": item.get("metadata", {})})
+            cmd = {
+                "type": "generate_simple",
+                "prompts": normalized,
+                "sampling": sampling,
+                "include_metadata": req.include_metadata,
+            }
         else:
             normalized = []
             for item in req.prompts:

@@ -191,20 +191,25 @@ async function submitSimple() {
     const useOffline = document.getElementById('g_offline').checked;
     const cleanupModelAfterJob = document.getElementById('g_cleanup_model').checked;
     const autoStart = document.getElementById('g_autostart').checked;
+    const includeMetadata = document.getElementById('g_include_metadata').checked;
     const sampling = parseJSONSafe(document.getElementById('g_sampling').value, samplingDefault);
     const fileEl = document.getElementById('g_file');
     let prompts = parseJSONSafe(document.getElementById('g_prompt').value, []);
     const fromFile = await readFileAsJSON(fileEl); if (fromFile) prompts = fromFile;
     if (!m) { document.getElementById('g_msg').innerHTML = '<span class="err">Model is required.</span>'; return; }
-    if (!Array.isArray(prompts)) { document.getElementById('g_msg').innerHTML = '<span class="err">Prompts must be an array of strings.</span>'; return; }
+    if (!Array.isArray(prompts)) { document.getElementById('g_msg').innerHTML = '<span class="err">Prompts must be an array of {prompt, metadata?} items.</span>'; return; }
+    if (!prompts.every((p) => p && typeof p === 'object' && typeof p.prompt === 'string')) {
+        document.getElementById('g_msg').innerHTML = '<span class="err">Each item must include a string prompt field.</span>';
+        return;
+    }
     try {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
         const headers = {'Content-Type':'application/json'};
         if (useOffline) headers['X-UI-Request'] = '1';
         const payload = useOffline
-            ? { model_name: m, type: 'generate', prompts, sampling, cleanup_model_after_job: cleanupModelAfterJob }
-            : { model_name: m, prompts, sampling };
+            ? { model_name: m, type: 'generate', prompts, sampling, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob }
+            : { model_name: m, prompts, sampling, include_metadata: includeMetadata };
         const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
         const j = await res.json(); if (!res.ok) { document.getElementById('g_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
         document.getElementById('g_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;

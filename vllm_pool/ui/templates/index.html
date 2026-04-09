@@ -88,12 +88,15 @@
                     <div class="fieldset">
                         <label><b>Sampling params</b></label><br>
                         <textarea id="g_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
+                        <div style="margin-top:8px;">
+                            <label><input id="g_include_metadata" type="checkbox" checked/> Include metadata in output rows</label>
+                        </div>
                     </div>
                 </div>
                 <div class="stack" style="flex:1; min-width:420px;">
                     <div class="fieldset">
-                        <label><b>Prompts JSON (array of strings)</b></label><br>
-                        <textarea id="g_prompt" rows="10" class="mono" placeholder='["Your prompt..."]'></textarea>
+                        <label><b>Prompts JSON (array of items)</b></label><br>
+                        <textarea id="g_prompt" rows="10" class="mono" placeholder='[{"prompt":"Your prompt...","metadata":{"id":"1"}}]'></textarea>
                     </div>
                     <div class="fieldset">
                         <label><b>OR Upload prompts JSON</b></label><br>
