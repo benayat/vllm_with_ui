@@ -33,7 +33,7 @@
         <div class="stack">
             <div><label>Model name</label><br><input id="mname" size="48" placeholder="Qwen/Qwen2.5-7B-Instruct"/></div>
             <div><label>GPU (optional)</label><br><input id="gpu" type="number" min="0" style="width:90px;" placeholder="e.g. 0"/></div>
-            <div><label>vLLM config JSON</label><br><textarea id="cfg" rows="10" cols="62" class="mono">__DEFAULT_CFG__</textarea></div>
+            <div><label>vLLM config JSON</label><br><textarea id="cfg" rows="10" cols="62" class="mono">__DEFAULT_CFG__</textarea><br><small class="muted">Contract: use <code>model_impl</code> ("vllm" or "transformers"); <code>use_transformers</code> is no longer supported.</small></div>
             <div class="row">
                 <button onclick="startModel()">Start</button>
                 <form onsubmit="stopWorker(event)">
