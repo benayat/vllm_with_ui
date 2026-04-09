@@ -22,8 +22,9 @@ class SamplingConfigModel(BaseModel):
 
 class GenerateSimpleRequest(BaseModel):
     model_name: str
-    prompts: List[str] | str
+    prompts: List[Dict[str, Any]]
     sampling: SamplingConfigModel
+    include_metadata: bool = True
 
 class ChatMessage(BaseModel):
     role: str
@@ -38,6 +39,7 @@ class GenerateChatRequest(BaseModel):
     prompts: List[ChatItem]
     sampling: SamplingConfigModel
     output_field: str = "output"
+    include_metadata: bool = True
 
 
 class OfflineJobRequest(BaseModel):
@@ -46,4 +48,5 @@ class OfflineJobRequest(BaseModel):
     prompts: List[Any]
     sampling: Optional[SamplingConfigModel] = None
     output_field: str = "output"
+    include_metadata: bool = True
     cleanup_model_after_job: bool = False

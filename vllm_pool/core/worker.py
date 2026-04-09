@@ -93,7 +93,11 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
             if kind == "generate_simple":
                 try:
                     sc = SamplingConfig(**msg["sampling"])
-                    out = client.generate_simple(msg["prompts"], sc)
+                    out = client.generate_simple(
+                        msg["prompts"],
+                        sc,
+                        include_metadata=msg.get("include_metadata", True),
+                    )
                     res_q.put({"type": "result", "job_id": msg["job_id"], "result": out})
                 except Exception as e:
                     res_q.put({"type": "error", "job_id": msg["job_id"], "error": str(e)})
@@ -102,7 +106,12 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
             if kind == "generate_chat":
                 try:
                     sc = SamplingConfig(**msg["sampling"])
-                    out = client.generate_chat(msg["prompts"], sc, output_field=msg.get("output_field", "output"))
+                    out = client.generate_chat(
+                        msg["prompts"],
+                        sc,
+                        output_field=msg.get("output_field", "output"),
+                        include_metadata=msg.get("include_metadata", True),
+                    )
                     res_q.put({"type": "result", "job_id": msg["job_id"], "result": out})
                 except Exception as e:
                     res_q.put({"type": "error", "job_id": msg["job_id"], "error": str(e)})

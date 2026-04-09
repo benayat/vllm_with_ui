@@ -60,7 +60,12 @@ class LLMClient:
         )
         return [TokensPrompt(prompt_token_ids=ids) for ids in enc["input_ids"]]
 
-    def generate_simple(self, prompts: List[str], sc: SamplingConfig) -> List[Dict[str, str]]:
+    def generate_simple(
+        self,
+        prompts: List[Dict[str, Any]],
+        sc: SamplingConfig,
+        include_metadata: bool = True,
+    ) -> List[Dict[str, str]]:
         params = SamplingParams(
             temperature=sc.temperature,
             top_p=sc.top_p,
@@ -68,10 +73,23 @@ class LLMClient:
             n=sc.n,
             seed=sc.seed,
         )
-        outs = self.llm.generate(prompts, sampling_params=params, use_tqdm=True)
-        return [{prompts[i]: out.outputs[0].text.strip()} for i, out in enumerate(outs)]
+        raw_prompts = [item["prompt"] for item in prompts]
+        outs = self.llm.generate(raw_prompts, sampling_params=params, use_tqdm=True)
+        return [
+            {
+                **(prompts[i].get("metadata", {}) if include_metadata else {}),
+                "output": out.outputs[0].text.strip(),
+            }
+            for i, out in enumerate(outs)
+        ]
 
-    def generate_chat(self, prompts: List[Dict[str, Any]], sc: SamplingConfig, output_field: str = "output") -> List[Dict]:
+    def generate_chat(
+        self,
+        prompts: List[Dict[str, Any]],
+        sc: SamplingConfig,
+        output_field: str = "output",
+        include_metadata: bool = True,
+    ) -> List[Dict]:
         params = SamplingParams(
             temperature=sc.temperature,
             top_p=sc.top_p,
@@ -89,7 +107,7 @@ class LLMClient:
             )
             return [
                 {
-                    **prompts[i].get("metadata", {}),
+                    **(prompts[i].get("metadata", {}) if include_metadata else {}),
                     output_field: self._post_process_output(outs[i].outputs[0].text.strip()),
                 }
                 for i in range(len(outs))
@@ -98,7 +116,7 @@ class LLMClient:
             logging.exception("Error in generate_chat")
             return [
                 {
-                    **prompts[i].get("metadata", {}),
+                    **(prompts[i].get("metadata", {}) if include_metadata else {}),
                     output_field: f"[ERROR] {str(e)}",
                 }
                 for i in range(len(prompts))

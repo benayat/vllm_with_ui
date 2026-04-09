@@ -126,13 +126,15 @@ ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compu
 
         * Choose **Model** (dropdown of loaded models).
         * Set **Sampling params** JSON.
-        * Paste **Prompts JSON** (array of strings) or **Upload** a JSON file.
+        * Paste **Prompts JSON** (array of `{prompt, metadata?}` items) or **Upload** a JSON file.
+        * Toggle **Include metadata in output rows** (defaults to enabled).
     * **Chat**:
 
         * Choose **Model**.
         * Set **Sampling params**.
         * Provide **Messages JSON** (array of chat items) or **Upload**.
         * **Output field** name (e.g., `"output"`).
+        * Toggle **Include metadata in output rows** (defaults to enabled).
     * Results appear below; click **Save as JSON**.
     * For both tabs, you can tick **Submit via offline queue endpoint** to send to `POST /generate/offline` instead of the regular generate endpoints.
     * You can also keep **Auto-start model if missing** enabled so the UI will call `/start` using the Start panel's vLLM config JSON (defaults shown there) before queue submission.
@@ -200,15 +202,19 @@ Content-Type: application/json
 ```json
 {
   "model_name": "meta-llama/Llama-3.2-1B-Instruct",
-  "prompts": ["Hello", "Explain transformers in 3 bullets"],
-  "sampling": { "temperature": 0.0, "top_p": 1.0, "max_tokens": 256, "batch_size": 1 }
+  "prompts": [
+    {"prompt": "Hello", "metadata": {"id": "1"}},
+    {"prompt": "Explain transformers in 3 bullets", "metadata": {"id": "2"}}
+  ],
+  "sampling": { "temperature": 0.0, "top_p": 1.0, "max_tokens": 256, "batch_size": 1 },
+  "include_metadata": true
 }
 ```
 
 Response:
 
 ```json
-{ "job_id": "a1b2c3d4", "result": [ {"Hello": "..."}, {"Explain transformers...": "..."} ] }
+{ "job_id": "a1b2c3d4", "result": [ {"id":"1", "output":"..."}, {"id":"2", "output":"..."} ] }
 ```
 
 ### Generate (Chat)
@@ -230,7 +236,8 @@ Content-Type: application/json
     }
   ],
   "sampling": { "temperature": 0.0, "top_p": 1.0, "max_tokens": 256, "batch_size": 1 },
-  "output_field": "output"
+  "output_field": "output",
+  "include_metadata": true
 }
 ```
 
@@ -251,13 +258,17 @@ Content-Type: application/json
 {
   "model_name": "meta-llama/Llama-3.2-1B-Instruct",
   "type": "generate",
-  "prompts": ["Hello", "Give me a haiku about CUDA"]
+  "prompts": [
+    {"prompt": "Hello", "metadata": {"id":"1"}},
+    {"prompt": "Give me a haiku about CUDA", "metadata": {"id":"2"}}
+  ]
 }
 ```
 
-* `type: "generate"` expects `prompts` as an array of strings.
+* `type: "generate"` expects `prompts` as items (`[{prompt:"...", metadata?}]`).
 * `type: "chat"` expects `prompts` as chat items (`[{messages:[{role, content}], metadata?}]`).
 * `sampling` is optional; if omitted the default sampling values are used.
+* `include_metadata` is optional for generate/chat jobs and defaults to `true`.
 * Response: `202` with `{ "job_id": "...", "status": "queued_offline" }`.
 
 ### Per-worker SSE tail
