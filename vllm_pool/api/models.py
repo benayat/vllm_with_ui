@@ -17,6 +17,8 @@ class SamplingConfigModel(BaseModel):
     temperature: float = 0.0
     top_p: float = 1.0
     max_tokens: int = 1024
+    n: int = 1
+    seed: int = 12345
 
 class GenerateSimpleRequest(BaseModel):
     model_name: str
