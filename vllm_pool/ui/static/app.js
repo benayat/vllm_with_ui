@@ -99,6 +99,29 @@ function openSSE(url) {
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
 async function readFileAsJSON(inputEl) { const f = inputEl.files && inputEl.files[0]; if (!f) return null; return JSON.parse(await f.text()); }
 
+function enableTabPlaceholderCompletion() {
+    const fields = document.querySelectorAll('input[placeholder], textarea[placeholder]');
+    for (const field of fields) {
+        const tag = field.tagName.toLowerCase();
+        const isTextInput = tag === 'input' && (!field.type || ['text', 'search', 'url', 'email', 'tel'].includes(field.type));
+        const isTextarea = tag === 'textarea';
+        if (!isTextInput && !isTextarea) continue;
+
+        field.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Tab' || ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            if ((field.value || '').trim() !== '') return;
+            const placeholder = (field.getAttribute('placeholder') || '').trim();
+            if (!placeholder) return;
+            ev.preventDefault();
+            field.value = placeholder;
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+            const pos = field.value.length;
+            if (typeof field.setSelectionRange === 'function') field.setSelectionRange(pos, pos);
+        });
+    }
+}
+
 async function ensureModelLoaded(modelName, autoStartEnabled) {
     if (!autoStartEnabled) return;
     const modelsRes = await fetch('/models');
@@ -185,6 +208,7 @@ async function submitChat() {
     const autoStart = document.getElementById('c_autostart').checked;
     const sampling = parseJSONSafe(document.getElementById('c_sampling').value, samplingDefault);
     const outField = document.getElementById('c_outfield').value || "output";
+    const includeMetadata = document.getElementById('c_include_metadata').checked;
     const fileEl = document.getElementById('c_file');
     let prompts = parseJSONSafe(document.getElementById('c_msgs').value, []);
     const fromFile = await readFileAsJSON(fileEl); if (fromFile) prompts = fromFile;
@@ -196,8 +220,8 @@ async function submitChat() {
         const headers = {'Content-Type':'application/json'};
         if (useOffline) headers['X-UI-Request'] = '1';
         const payload = useOffline
-            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, cleanup_model_after_job: cleanupModelAfterJob }
-            : { model_name: m, prompts, sampling, output_field: outField };
+            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob }
+            : { model_name: m, prompts, sampling, output_field: outField, include_metadata: includeMetadata };
         const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
         const j = await res.json(); if (!res.ok) { document.getElementById('c_msg').innerHTML = `<span class="err">${j.detail || 'error'}</span>`; return; }
         document.getElementById('c_msg').innerHTML = `<span class="ok">${j.status || 'queued'} (job ${j.job_id})</span>`;
@@ -207,4 +231,5 @@ async function submitChat() {
     }
 }
 
+enableTabPlaceholderCompletion();
 refresh();

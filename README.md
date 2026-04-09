@@ -133,6 +133,7 @@ ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compu
         * Set **Sampling params**.
         * Provide **Messages JSON** (array of chat items) or **Upload**.
         * **Output field** name (e.g., `"output"`).
+        * Toggle **Include metadata in output rows** (defaults to enabled).
     * Results appear below; click **Save as JSON**.
     * For both tabs, you can tick **Submit via offline queue endpoint** to send to `POST /generate/offline` instead of the regular generate endpoints.
     * You can also keep **Auto-start model if missing** enabled so the UI will call `/start` using the Start panel's vLLM config JSON (defaults shown there) before queue submission.
@@ -230,7 +231,8 @@ Content-Type: application/json
     }
   ],
   "sampling": { "temperature": 0.0, "top_p": 1.0, "max_tokens": 256, "batch_size": 1 },
-  "output_field": "output"
+  "output_field": "output",
+  "include_metadata": true
 }
 ```
 
@@ -258,6 +260,7 @@ Content-Type: application/json
 * `type: "generate"` expects `prompts` as an array of strings.
 * `type: "chat"` expects `prompts` as chat items (`[{messages:[{role, content}], metadata?}]`).
 * `sampling` is optional; if omitted the default sampling values are used.
+* `include_metadata` is optional for chat jobs and defaults to `true`.
 * Response: `202` with `{ "job_id": "...", "status": "queued_offline" }`.
 
 ### Per-worker SSE tail
