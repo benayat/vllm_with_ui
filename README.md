@@ -130,10 +130,10 @@ ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compu
         * Choose **Model** (dropdown of loaded models).
         * Set **Sampling params** JSON.
         * Paste **Prompts JSON** (array of `{prompt, metadata?}` items) or **Upload** a JSON file.
-        * Save/load/delete prompt presets in a local **Prompt Bank**.
-        * Save/load/delete sampling presets in a local **Sampling Bank**.
+        * Save/load/delete prompt presets in server-side persistent **Prompt Bank** storage.
+        * Save/load/delete sampling presets in server-side persistent **Sampling Bank** storage.
         * Optionally provide **Post-processor spec JSON**.
-        * Save/load/delete named post-processor presets directly in the UI (browser local storage).
+        * Save/load/delete named post-processor presets in server-side persistent storage.
         * Use **Quick script builder** to write Python code in UI and generate a `python_script` post-processor spec automatically.
         * Toggle **Include metadata in output rows** (defaults to enabled).
     * **Chat**:
@@ -141,10 +141,10 @@ ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compu
         * Choose **Model**.
         * Set **Sampling params**.
         * Provide **Messages JSON** (array of chat items) or **Upload**.
-        * Save/load/delete prompt presets in a local **Prompt Bank**.
-        * Save/load/delete sampling presets in a local **Sampling Bank**.
+        * Save/load/delete prompt presets in server-side persistent **Prompt Bank** storage.
+        * Save/load/delete sampling presets in server-side persistent **Sampling Bank** storage.
         * Optionally provide **Post-processor spec JSON**.
-        * Save/load/delete named post-processor presets directly in the UI (browser local storage).
+        * Save/load/delete named post-processor presets in server-side persistent storage.
         * Use **Quick script builder** to write Python code in UI and generate a `python_script` post-processor spec automatically.
         * **Output field** name (e.g., `"output"`).
         * Toggle **Include metadata in output rows** (defaults to enabled).
@@ -334,6 +334,10 @@ Runtime install controls:
 * `POST_PROCESSOR_MAX_DEPS` (default `20`): maximum dependency strings in one request.
 * `POST_PROCESSOR_INSTALL_TIMEOUT_SEC` (default `120`): install timeout per dependency.
 * `POST_PROCESSOR_MAX_JSON_BYTES` (default `2097152`): max JSON size for post-processor input/output.
+
+UI state persistence controls:
+
+* `VLLM_UI_STATE_PATH` (default `./data/ui_state.json`): file path for persistent UI state (prompt bank, sampling bank, post-processor presets).
 
 ### Per-worker SSE tail
 

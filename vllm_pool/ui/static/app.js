@@ -2,9 +2,12 @@ let lastResult = null;
 let evtSource = null;
 
 const samplingDefault = { temperature: 0.0, top_p: 1.0, max_tokens: 256 };
-const PROCESSOR_PRESETS_KEY = 'vllm_pool_post_processor_presets_v1';
-const PROMPT_BANK_KEY = 'vllm_pool_prompt_bank_v1';
-const SAMPLING_BANK_KEY = 'vllm_pool_sampling_bank_v1';
+const UI_STATE_DEFAULT = {
+    processor_presets: [],
+    prompt_bank: { simple: [], chat: [] },
+    sampling_bank: { simple: [], chat: [] },
+};
+let uiState = JSON.parse(JSON.stringify(UI_STATE_DEFAULT));
 
 function switchTab(which) {
     const sBtn = document.getElementById('tabSimple');
@@ -101,14 +104,40 @@ function openSSE(url) {
 
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
 
+async function loadUiState() {
+    try {
+        const res = await fetch('/ui/state');
+        if (!res.ok) throw new Error('failed loading ui state');
+        const data = await res.json();
+        uiState = {
+            processor_presets: Array.isArray(data.processor_presets) ? data.processor_presets : [],
+            prompt_bank: data.prompt_bank && typeof data.prompt_bank === 'object' ? data.prompt_bank : { simple: [], chat: [] },
+            sampling_bank: data.sampling_bank && typeof data.sampling_bank === 'object' ? data.sampling_bank : { simple: [], chat: [] },
+        };
+    } catch (_) {
+        uiState = JSON.parse(JSON.stringify(UI_STATE_DEFAULT));
+    }
+}
+
+async function persistUiStateSection(section, value) {
+    uiState[section] = value;
+    try {
+        await fetch(`/ui/state/${section}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value }),
+        });
+    } catch (_) {
+        // keep in-memory state even if persistence request fails
+    }
+}
+
 function getProcessorPresets() {
-    const raw = localStorage.getItem(PROCESSOR_PRESETS_KEY);
-    const parsed = parseJSONSafe(raw, []);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(uiState.processor_presets) ? uiState.processor_presets : [];
 }
 
 function setProcessorPresets(items) {
-    localStorage.setItem(PROCESSOR_PRESETS_KEY, JSON.stringify(items));
+    persistUiStateSection('processor_presets', items);
 }
 
 function refreshProcessorPresetSelectors() {
@@ -171,12 +200,12 @@ function modeNameFromPrefix(prefix) {
 }
 
 function getBankMap(key) {
-    const parsed = parseJSONSafe(localStorage.getItem(key), {});
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    const value = uiState[key];
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function setBankMap(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+    persistUiStateSection(key, value);
 }
 
 function upsertNamedBankItem(key, mode, name, value) {
@@ -207,7 +236,7 @@ function refreshPromptBankSelectors() {
         const mode = modeNameFromPrefix(prefix);
         const selectEl = document.getElementById(`${prefix}_prompt_bank_select`);
         if (!selectEl) continue;
-        const bank = getBankMap(PROMPT_BANK_KEY);
+        const bank = getBankMap('prompt_bank');
         const items = Array.isArray(bank[mode]) ? bank[mode] : [];
         selectEl.innerHTML = '';
         const d = document.createElement('option'); d.value = ''; d.textContent = '— prompt bank —'; selectEl.appendChild(d);
@@ -229,7 +258,7 @@ function savePromptBankItem(prefix) {
     const value = contentEl?.value || '';
     if (!name) { alert('Prompt preset name is required.'); return; }
     if (!value.trim()) { alert('Prompt JSON is empty.'); return; }
-    upsertNamedBankItem(PROMPT_BANK_KEY, mode, name, value);
+    upsertNamedBankItem('prompt_bank', mode, name, value);
     refreshPromptBankSelectors();
 }
 
@@ -238,7 +267,7 @@ function loadPromptBankItem(prefix) {
     const selectEl = document.getElementById(`${prefix}_prompt_bank_select`);
     const selected = (selectEl?.value || '').trim();
     if (!selected) return;
-    const item = getNamedBankItem(PROMPT_BANK_KEY, mode, selected);
+    const item = getNamedBankItem('prompt_bank', mode, selected);
     if (!item) { alert(`Prompt preset '${selected}' not found.`); return; }
     const textareaId = prefix === 'c' ? 'c_msgs' : 'g_prompt';
     const contentEl = document.getElementById(textareaId);
@@ -250,7 +279,7 @@ function deletePromptBankItem(prefix) {
     const selectEl = document.getElementById(`${prefix}_prompt_bank_select`);
     const selected = (selectEl?.value || '').trim();
     if (!selected) { alert('Choose a prompt preset to delete.'); return; }
-    deleteNamedBankItem(PROMPT_BANK_KEY, mode, selected);
+    deleteNamedBankItem('prompt_bank', mode, selected);
     refreshPromptBankSelectors();
 }
 
@@ -259,7 +288,7 @@ function refreshSamplingBankSelectors() {
         const mode = modeNameFromPrefix(prefix);
         const selectEl = document.getElementById(`${prefix}_sampling_bank_select`);
         if (!selectEl) continue;
-        const bank = getBankMap(SAMPLING_BANK_KEY);
+        const bank = getBankMap('sampling_bank');
         const items = Array.isArray(bank[mode]) ? bank[mode] : [];
         selectEl.innerHTML = '';
         const d = document.createElement('option'); d.value = ''; d.textContent = '— sampling bank —'; selectEl.appendChild(d);
@@ -281,7 +310,7 @@ function saveSamplingBankItem(prefix) {
     const value = contentEl?.value || '';
     if (!name) { alert('Sampling preset name is required.'); return; }
     if (!value.trim()) { alert('Sampling JSON is empty.'); return; }
-    upsertNamedBankItem(SAMPLING_BANK_KEY, mode, name, value);
+    upsertNamedBankItem('sampling_bank', mode, name, value);
     refreshSamplingBankSelectors();
 }
 
@@ -290,7 +319,7 @@ function loadSamplingBankItem(prefix) {
     const selectEl = document.getElementById(`${prefix}_sampling_bank_select`);
     const selected = (selectEl?.value || '').trim();
     if (!selected) return;
-    const item = getNamedBankItem(SAMPLING_BANK_KEY, mode, selected);
+    const item = getNamedBankItem('sampling_bank', mode, selected);
     if (!item) { alert(`Sampling preset '${selected}' not found.`); return; }
     const textareaId = prefix === 'c' ? 'c_sampling' : 'g_sampling';
     const contentEl = document.getElementById(textareaId);
@@ -302,7 +331,7 @@ function deleteSamplingBankItem(prefix) {
     const selectEl = document.getElementById(`${prefix}_sampling_bank_select`);
     const selected = (selectEl?.value || '').trim();
     if (!selected) { alert('Choose a sampling preset to delete.'); return; }
-    deleteNamedBankItem(SAMPLING_BANK_KEY, mode, selected);
+    deleteNamedBankItem('sampling_bank', mode, selected);
     refreshSamplingBankSelectors();
 }
 
@@ -481,8 +510,13 @@ async function submitChat() {
     }
 }
 
-enableTabPlaceholderCompletion();
-refreshProcessorPresetSelectors();
-refreshPromptBankSelectors();
-refreshSamplingBankSelectors();
-refresh();
+async function bootstrapUI() {
+    enableTabPlaceholderCompletion();
+    await loadUiState();
+    refreshProcessorPresetSelectors();
+    refreshPromptBankSelectors();
+    refreshSamplingBankSelectors();
+    refresh();
+}
+
+bootstrapUI();
