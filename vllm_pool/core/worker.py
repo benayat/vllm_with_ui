@@ -3,6 +3,7 @@ import os, sys, threading, multiprocessing as mp, time
 from typing import Dict, Any, List
 from .types import LLMResourceConfig, SamplingConfig
 from .llm_client import LLMClient
+from .post_processor import PostProcessorManager, PostProcessorError
 
 class TailCapture:
     """Capture CR/newline output (tqdm, logs). Keep a rolling tail."""
@@ -60,6 +61,7 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
     try:
         res_cfg = LLMResourceConfig(**cfg_dict)
         client = LLMClient(model_name, res_cfg)
+        post_processor = PostProcessorManager()
         res_q.put({"type": "ready", "pid": os.getpid()})
     except Exception as e:
         res_q.put({"type": "error", "error": f"Failed to initialize LLM: {e}"})
@@ -93,12 +95,26 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
             if kind == "generate_simple":
                 try:
                     sc = SamplingConfig(**msg["sampling"])
-                    out = client.generate_simple(
+                    generation_out = client.generate_simple(
                         msg["prompts"],
                         sc,
                         include_metadata=msg.get("include_metadata", True),
                     )
-                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": out})
+                    result_payload: Any = generation_out
+                    pp_spec = msg.get("post_processor")
+                    if pp_spec:
+                        try:
+                            pp_out = post_processor.execute(generation_out, pp_spec)
+                            result_payload = {"generation": generation_out, "post_processing": pp_out}
+                        except PostProcessorError as e:
+                            if pp_spec.get("on_error", "fail") == "continue":
+                                result_payload = {
+                                    "generation": generation_out,
+                                    "post_processing": {"status": "error", "name": pp_spec.get("name"), "error": str(e)},
+                                }
+                            else:
+                                raise
+                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": result_payload})
                 except Exception as e:
                     res_q.put({"type": "error", "job_id": msg["job_id"], "error": str(e)})
                 continue
@@ -106,13 +122,27 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
             if kind == "generate_chat":
                 try:
                     sc = SamplingConfig(**msg["sampling"])
-                    out = client.generate_chat(
+                    generation_out = client.generate_chat(
                         msg["prompts"],
                         sc,
                         output_field=msg.get("output_field", "output"),
                         include_metadata=msg.get("include_metadata", True),
                     )
-                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": out})
+                    result_payload: Any = generation_out
+                    pp_spec = msg.get("post_processor")
+                    if pp_spec:
+                        try:
+                            pp_out = post_processor.execute(generation_out, pp_spec)
+                            result_payload = {"generation": generation_out, "post_processing": pp_out}
+                        except PostProcessorError as e:
+                            if pp_spec.get("on_error", "fail") == "continue":
+                                result_payload = {
+                                    "generation": generation_out,
+                                    "post_processing": {"status": "error", "name": pp_spec.get("name"), "error": str(e)},
+                                }
+                            else:
+                                raise
+                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": result_payload})
                 except Exception as e:
                     res_q.put({"type": "error", "job_id": msg["job_id"], "error": str(e)})
                 continue

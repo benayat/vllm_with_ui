@@ -21,6 +21,8 @@ Object-oriented core (Python) split into domain types, worker, pool, and an adap
     * **Simple**: array of strings.
     * **Chat**: array of chat items `{messages:[{role, content}], metadata?}`.
 * ✅ **Offline mode job intake**: accept generation/chat jobs even before a model is loaded; jobs stay queued and dispatch once the target model starts.
+* ✅ Optional post-processing on generation output for simple/chat/offline requests.
+* ✅ Optional runtime dependency installation for post-processors using `uv pip install <dependency>` (guarded by env flags).
 * ✅ Editable **vLLM resource config** JSON (defaults shown in UI).
 * ✅ JSON responses + “Save as JSON” in the UI.
 * ✅ Clean OOD design; core logic independent of the web layer.
@@ -49,6 +51,7 @@ vllm_pool/
 │   │   ├── config.py            # default vLLM config
 │   │   ├── types.py             # dataclasses: resource & sampling, chat
 │   │   ├── llm_client.py        # vLLM adapter
+│   │   ├── post_processor.py    # post-processing + dependency installer
 │   │   ├── worker.py            # worker loop + log tail capture
 │   │   └── pool.py              # PoolManager: lifecycle, queueing, SSE subs
 │   ├── ui/
@@ -127,12 +130,22 @@ ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compu
         * Choose **Model** (dropdown of loaded models).
         * Set **Sampling params** JSON.
         * Paste **Prompts JSON** (array of `{prompt, metadata?}` items) or **Upload** a JSON file.
+        * Save/load/delete prompt presets in a local **Prompt Bank**.
+        * Save/load/delete sampling presets in a local **Sampling Bank**.
+        * Optionally provide **Post-processor spec JSON**.
+        * Save/load/delete named post-processor presets directly in the UI (browser local storage).
+        * Use **Quick script builder** to write Python code in UI and generate a `python_script` post-processor spec automatically.
         * Toggle **Include metadata in output rows** (defaults to enabled).
     * **Chat**:
 
         * Choose **Model**.
         * Set **Sampling params**.
         * Provide **Messages JSON** (array of chat items) or **Upload**.
+        * Save/load/delete prompt presets in a local **Prompt Bank**.
+        * Save/load/delete sampling presets in a local **Sampling Bank**.
+        * Optionally provide **Post-processor spec JSON**.
+        * Save/load/delete named post-processor presets directly in the UI (browser local storage).
+        * Use **Quick script builder** to write Python code in UI and generate a `python_script` post-processor spec automatically.
         * **Output field** name (e.g., `"output"`).
         * Toggle **Include metadata in output rows** (defaults to enabled).
     * Results appear below; click **Save as JSON**.
@@ -207,7 +220,13 @@ Content-Type: application/json
     {"prompt": "Explain transformers in 3 bullets", "metadata": {"id": "2"}}
   ],
   "sampling": { "temperature": 0.0, "top_p": 1.0, "max_tokens": 256, "batch_size": 1 },
-  "include_metadata": true
+  "include_metadata": true,
+  "post_processor": {
+    "name": "identity",
+    "config": {},
+    "runtime": {"dependencies": [], "auto_install": false},
+    "on_error": "fail"
+  }
 }
 ```
 
@@ -237,7 +256,13 @@ Content-Type: application/json
   ],
   "sampling": { "temperature": 0.0, "top_p": 1.0, "max_tokens": 256, "batch_size": 1 },
   "output_field": "output",
-  "include_metadata": true
+  "include_metadata": true,
+  "post_processor": {
+    "name": "identity",
+    "config": {},
+    "runtime": {"dependencies": [], "auto_install": false},
+    "on_error": "fail"
+  }
 }
 ```
 
@@ -261,7 +286,13 @@ Content-Type: application/json
   "prompts": [
     {"prompt": "Hello", "metadata": {"id":"1"}},
     {"prompt": "Give me a haiku about CUDA", "metadata": {"id":"2"}}
-  ]
+  ],
+  "post_processor": {
+    "name": "identity",
+    "config": {},
+    "runtime": {"dependencies": [], "auto_install": false},
+    "on_error": "fail"
+  }
 }
 ```
 
@@ -269,7 +300,40 @@ Content-Type: application/json
 * `type: "chat"` expects `prompts` as chat items (`[{messages:[{role, content}], metadata?}]`).
 * `sampling` is optional; if omitted the default sampling values are used.
 * `include_metadata` is optional for generate/chat jobs and defaults to `true`.
+* `post_processor` is optional. If set, result shape becomes `{generation, post_processing}`.
 * Response: `202` with `{ "job_id": "...", "status": "queued_offline" }`.
+
+`python_script` processor (for rapid research workflows):
+
+```json
+{
+  "name": "python_script",
+  "config": {
+    "entrypoint": "process",
+    "code": "def process(generation_json, config):\n    return generation_json"
+  },
+  "runtime": {
+    "dependencies": ["scipy", "numpy"],
+    "auto_install": true
+  },
+  "on_error": "fail"
+}
+```
+
+Expected script signature:
+
+```python
+def process(generation_json, config):
+    # return any JSON-serializable output
+    return {"your": "result"}
+```
+
+Runtime install controls:
+
+* `ALLOW_RUNTIME_DEP_INSTALL` (default `false`): allow/disallow runtime installs.
+* `POST_PROCESSOR_MAX_DEPS` (default `20`): maximum dependency strings in one request.
+* `POST_PROCESSOR_INSTALL_TIMEOUT_SEC` (default `120`): install timeout per dependency.
+* `POST_PROCESSOR_MAX_JSON_BYTES` (default `2097152`): max JSON size for post-processor input/output.
 
 ### Per-worker SSE tail
 
