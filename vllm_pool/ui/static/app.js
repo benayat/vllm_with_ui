@@ -619,7 +619,13 @@ function initScriptBuilderDnD(prefix) {
         document.getElementById(`${prefix}_drop_post`),
     ].filter(Boolean);
     if (!card || !zones.length) return;
-    card.addEventListener('dragstart', () => {
+    card.addEventListener('dragstart', (ev) => {
+        if (ev.dataTransfer) {
+            // Required by Firefox and some Chromium configurations; without a payload,
+            // dragstart succeeds visually but drop handlers never fire.
+            ev.dataTransfer.setData('text/plain', `${prefix}:script`);
+            ev.dataTransfer.effectAllowed = 'move';
+        }
         card.dataset.dragging = '1';
     });
     card.addEventListener('dragend', () => {
@@ -627,8 +633,13 @@ function initScriptBuilderDnD(prefix) {
         zones.forEach((z) => z.classList.remove('drag-over'));
     });
     zones.forEach((zone) => {
+        zone.addEventListener('dragenter', (ev) => {
+            ev.preventDefault();
+            zone.classList.add('drag-over');
+        });
         zone.addEventListener('dragover', (ev) => {
             ev.preventDefault();
+            if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
             zone.classList.add('drag-over');
         });
         zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
