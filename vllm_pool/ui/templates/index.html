@@ -88,8 +88,42 @@
                     <div class="fieldset">
                         <label><b>Sampling params</b></label><br>
                         <textarea id="g_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="g_sampling_bank_name" size="18" placeholder="Sampling preset name"/>
+                            <button type="button" onclick="saveSamplingBankItem('g')">Save</button>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <select id="g_sampling_bank_select" style="min-width:220px;"></select>
+                            <button type="button" onclick="loadSamplingBankItem('g')">Load</button>
+                            <button type="button" onclick="deleteSamplingBankItem('g')">Delete</button>
+                        </div>
                         <div style="margin-top:8px;">
                             <label><input id="g_include_metadata" type="checkbox" checked/> Include metadata in output rows</label>
+                        </div>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>Quick script builder (optional)</b></label><br>
+                        <textarea id="g_pp_script_code" rows="8" cols="40" class="mono" placeholder='def process(generation_json, config):&#10;    # Return any JSON-serializable object&#10;    return generation_json'></textarea>
+                        <div style="margin-top:8px;">
+                            <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
+                            <input id="g_pp_script_deps" size="40" placeholder="scipy,numpy"/>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="g_pp_script_entrypoint" size="16" value="process"/>
+                            <button type="button" onclick="buildPythonScriptProcessorSpec('g')">Use script as post-processor</button>
+                        </div>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>Post-processor spec JSON (optional)</b></label><br>
+                        <textarea id="g_post_processor" rows="6" cols="40" class="mono" placeholder='{"name":"identity","config":{},"runtime":{"dependencies":[],"auto_install":false},"on_error":"fail"} or [{"name":"identity","config":{}},{"name":"python_script","config":{"code":"def process(g,c):\n  return g"}}]'></textarea>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="g_pp_preset_name" size="18" placeholder="Preset name"/>
+                            <button type="button" onclick="saveProcessorPreset('g')">Save preset</button>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <select id="g_pp_preset_select" style="min-width:220px;"></select>
+                            <button type="button" onclick="applyProcessorPreset('g')">Load</button>
+                            <button type="button" onclick="deleteProcessorPreset('g')">Delete</button>
                         </div>
                     </div>
                 </div>
@@ -97,6 +131,15 @@
                     <div class="fieldset">
                         <label><b>Prompts JSON (array of items)</b></label><br>
                         <textarea id="g_prompt" rows="10" class="mono" placeholder='[{"prompt":"Your prompt...","metadata":{"id":"1"}}]'></textarea>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="g_prompt_bank_name" size="18" placeholder="Prompt preset name"/>
+                            <button type="button" onclick="savePromptBankItem('g')">Save</button>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <select id="g_prompt_bank_select" style="min-width:220px;"></select>
+                            <button type="button" onclick="loadPromptBankItem('g')">Load</button>
+                            <button type="button" onclick="deletePromptBankItem('g')">Delete</button>
+                        </div>
                     </div>
                     <div class="fieldset">
                         <label><b>OR Upload prompts JSON</b></label><br>
@@ -130,12 +173,55 @@
                     <div class="fieldset">
                         <label><b>Sampling params</b></label><br>
                         <textarea id="c_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="c_sampling_bank_name" size="18" placeholder="Sampling preset name"/>
+                            <button type="button" onclick="saveSamplingBankItem('c')">Save</button>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <select id="c_sampling_bank_select" style="min-width:220px;"></select>
+                            <button type="button" onclick="loadSamplingBankItem('c')">Load</button>
+                            <button type="button" onclick="deleteSamplingBankItem('c')">Delete</button>
+                        </div>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>Quick script builder (optional)</b></label><br>
+                        <textarea id="c_pp_script_code" rows="8" cols="40" class="mono" placeholder='def process(generation_json, config):&#10;    # Return any JSON-serializable object&#10;    return generation_json'></textarea>
+                        <div style="margin-top:8px;">
+                            <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
+                            <input id="c_pp_script_deps" size="40" placeholder="scipy,numpy"/>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="c_pp_script_entrypoint" size="16" value="process"/>
+                            <button type="button" onclick="buildPythonScriptProcessorSpec('c')">Use script as post-processor</button>
+                        </div>
+                    </div>
+                    <div class="fieldset">
+                        <label><b>Post-processor spec JSON (optional)</b></label><br>
+                        <textarea id="c_post_processor" rows="6" cols="40" class="mono" placeholder='{"name":"identity","config":{},"runtime":{"dependencies":[],"auto_install":false},"on_error":"fail"} or [{"name":"identity","config":{}},{"name":"python_script","config":{"code":"def process(g,c):\n  return g"}}]'></textarea>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="c_pp_preset_name" size="18" placeholder="Preset name"/>
+                            <button type="button" onclick="saveProcessorPreset('c')">Save preset</button>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <select id="c_pp_preset_select" style="min-width:220px;"></select>
+                            <button type="button" onclick="applyProcessorPreset('c')">Load</button>
+                            <button type="button" onclick="deleteProcessorPreset('c')">Delete</button>
+                        </div>
                     </div>
                 </div>
                 <div class="stack" style="flex:1; min-width:460px;">
                     <div class="fieldset">
                         <label><b>Messages JSON (array of chat items)</b></label><br>
                         <textarea id="c_msgs" rows="10" class="mono" placeholder='[{"messages":[{"role":"user","content":"Hi"}],"metadata":{"id":"1"}}]'></textarea>
+                        <div style="margin-top:8px;" class="row">
+                            <input id="c_prompt_bank_name" size="18" placeholder="Prompt preset name"/>
+                            <button type="button" onclick="savePromptBankItem('c')">Save</button>
+                        </div>
+                        <div style="margin-top:8px;" class="row">
+                            <select id="c_prompt_bank_select" style="min-width:220px;"></select>
+                            <button type="button" onclick="loadPromptBankItem('c')">Load</button>
+                            <button type="button" onclick="deletePromptBankItem('c')">Delete</button>
+                        </div>
                     </div>
                     <div class="fieldset">
                         <label><b>OR Upload chat JSON file</b></label><br>

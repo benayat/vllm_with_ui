@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LLMResourceConfigModel(BaseModel):
@@ -43,11 +43,27 @@ class SamplingConfigModel(BaseModel):
     seed: int = 12345
 
 
+class PostProcessorRuntimeModel(BaseModel):
+    dependencies: List[str] = Field(default_factory=list)
+    auto_install: bool = False
+
+
+class PostProcessorSpecModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    config: Dict[str, Any] = Field(default_factory=dict)
+    runtime: Optional[PostProcessorRuntimeModel] = None
+    on_error: Literal["fail", "continue"] = "fail"
+
+
 class GenerateSimpleRequest(BaseModel):
     model_name: str
     prompts: List[Dict[str, Any]]
     sampling: SamplingConfigModel
     include_metadata: bool = True
+    post_processor: Optional[PostProcessorSpecModel] = None
+    post_processors: Optional[List[PostProcessorSpecModel]] = None
 
 
 class ChatMessage(BaseModel):
@@ -66,6 +82,8 @@ class GenerateChatRequest(BaseModel):
     sampling: SamplingConfigModel
     output_field: str = "output"
     include_metadata: bool = True
+    post_processor: Optional[PostProcessorSpecModel] = None
+    post_processors: Optional[List[PostProcessorSpecModel]] = None
 
 
 class OfflineJobRequest(BaseModel):
@@ -76,3 +94,5 @@ class OfflineJobRequest(BaseModel):
     output_field: str = "output"
     include_metadata: bool = True
     cleanup_model_after_job: bool = False
+    post_processor: Optional[PostProcessorSpecModel] = None
+    post_processors: Optional[List[PostProcessorSpecModel]] = None

@@ -8,6 +8,15 @@ from ..core.pool import PoolManager
 router = APIRouter()
 
 
+def _build_post_processor_chain(single, chain):
+    out = []
+    if isinstance(chain, list):
+        out.extend([it.model_dump() for it in chain])
+    if single is not None:
+        out.append(single.model_dump())
+    return out
+
+
 def bind(pool: PoolManager) -> APIRouter:
     @router.post("/generate/simple")
     def generate_simple(req: GenerateSimpleRequest):
@@ -26,6 +35,8 @@ def bind(pool: PoolManager) -> APIRouter:
                 "prompts": prompts,
                 "sampling": req.sampling.model_dump(),
                 "include_metadata": req.include_metadata,
+                "post_processor": req.post_processor.model_dump() if req.post_processor else None,
+                "post_processors": _build_post_processor_chain(req.post_processor, req.post_processors),
             },
         }
         try:
@@ -52,6 +63,8 @@ def bind(pool: PoolManager) -> APIRouter:
                 "sampling": req.sampling.model_dump(),
                 "output_field": req.output_field,
                 "include_metadata": req.include_metadata,
+                "post_processor": req.post_processor.model_dump() if req.post_processor else None,
+                "post_processors": _build_post_processor_chain(req.post_processor, req.post_processors),
             },
         }
         try:
@@ -84,6 +97,8 @@ def bind(pool: PoolManager) -> APIRouter:
                 "prompts": normalized,
                 "sampling": sampling,
                 "include_metadata": req.include_metadata,
+                "post_processor": req.post_processor.model_dump() if req.post_processor else None,
+                "post_processors": _build_post_processor_chain(req.post_processor, req.post_processors),
             }
         else:
             normalized = []
@@ -103,6 +118,8 @@ def bind(pool: PoolManager) -> APIRouter:
                 "sampling": sampling,
                 "output_field": req.output_field,
                 "include_metadata": req.include_metadata,
+                "post_processor": req.post_processor.model_dump() if req.post_processor else None,
+                "post_processors": _build_post_processor_chain(req.post_processor, req.post_processors),
             }
 
         job = {

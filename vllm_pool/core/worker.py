@@ -3,6 +3,7 @@ import os, sys, threading, multiprocessing as mp, time
 from typing import Dict, Any, List
 from .types import LLMResourceConfig, SamplingConfig
 from .llm_client import LLMClient
+from .post_processor import PostProcessorManager, PostProcessorError
 
 class TailCapture:
     """Capture CR/newline output (tqdm, logs). Keep a rolling tail."""
@@ -60,6 +61,7 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
     try:
         res_cfg = LLMResourceConfig(**cfg_dict)
         client = LLMClient(model_name, res_cfg)
+        post_processor = PostProcessorManager()
         res_q.put({"type": "ready", "pid": os.getpid()})
     except Exception as e:
         res_q.put({"type": "error", "error": f"Failed to initialize LLM: {e}"})
@@ -92,27 +94,85 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
 
             if kind == "generate_simple":
                 try:
+                    def run_post_processor_chain(generation_out: Any):
+                        specs = msg.get("post_processors")
+                        if not isinstance(specs, list):
+                            single = msg.get("post_processor")
+                            specs = [single] if isinstance(single, dict) else []
+                        if not specs:
+                            return generation_out
+
+                        current = generation_out
+                        chain_reports = []
+                        for spec in specs:
+                            if not isinstance(spec, dict):
+                                continue
+                            try:
+                                pp_out = post_processor.execute(current, spec)
+                                chain_reports.append(pp_out)
+                                current = pp_out.get("output")
+                            except PostProcessorError as e:
+                                if spec.get("on_error", "fail") == "continue":
+                                    chain_reports.append({
+                                        "status": "error",
+                                        "name": spec.get("name"),
+                                        "error": str(e),
+                                    })
+                                    continue
+                                raise
+                        return {"generation": generation_out, "post_processing": {"status": "ok", "chain": chain_reports, "final_output": current}}
+
                     sc = SamplingConfig(**msg["sampling"])
-                    out = client.generate_simple(
+                    generation_out = client.generate_simple(
                         msg["prompts"],
                         sc,
                         include_metadata=msg.get("include_metadata", True),
                     )
-                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": out})
+                    result_payload: Any = run_post_processor_chain(generation_out)
+                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": result_payload})
                 except Exception as e:
                     res_q.put({"type": "error", "job_id": msg["job_id"], "error": str(e)})
                 continue
 
             if kind == "generate_chat":
                 try:
+                    def run_post_processor_chain(generation_out: Any):
+                        specs = msg.get("post_processors")
+                        if not isinstance(specs, list):
+                            single = msg.get("post_processor")
+                            specs = [single] if isinstance(single, dict) else []
+                        if not specs:
+                            return generation_out
+
+                        current = generation_out
+                        chain_reports = []
+                        for spec in specs:
+                            if not isinstance(spec, dict):
+                                continue
+                            try:
+                                pp_out = post_processor.execute(current, spec)
+                                chain_reports.append(pp_out)
+                                current = pp_out.get("output")
+                            except PostProcessorError as e:
+                                if spec.get("on_error", "fail") == "continue":
+                                    chain_reports.append({
+                                        "status": "error",
+                                        "name": spec.get("name"),
+                                        "error": str(e),
+                                    })
+                                    continue
+                                raise
+                        return {"generation": generation_out, "post_processing": {"status": "ok", "chain": chain_reports, "final_output": current}}
+
                     sc = SamplingConfig(**msg["sampling"])
-                    out = client.generate_chat(
+                    generation_out = client.generate_chat(
                         msg["prompts"],
                         sc,
                         output_field=msg.get("output_field", "output"),
                         include_metadata=msg.get("include_metadata", True),
                     )
-                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": out})
+                    result_payload: Any = run_post_processor_chain(generation_out)
+                    res_q.put({"type": "result", "job_id": msg["job_id"], "result": result_payload})
                 except Exception as e:
                     res_q.put({"type": "error", "job_id": msg["job_id"], "error": str(e)})
                 continue
