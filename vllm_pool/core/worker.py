@@ -58,6 +58,30 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
     sys.stdout = tap
     sys.stderr = tap
 
+    def _normalize_simple_prompts(items: Any) -> List[Dict[str, Any]]:
+        if not isinstance(items, list):
+            raise PostProcessorError("pre_processor output for simple generation must be a list")
+        out: List[Dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("prompt"), str):
+                raise PostProcessorError("each simple prompt item must include string field 'prompt'")
+            out.append({"prompt": item["prompt"], "metadata": item.get("metadata", {})})
+        return out
+
+    def _normalize_chat_prompts(items: Any) -> List[Dict[str, Any]]:
+        if not isinstance(items, list):
+            raise PostProcessorError("pre_processor output for chat generation must be a list")
+        out: List[Dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("messages"), list):
+                raise PostProcessorError("each chat prompt item must include list field 'messages'")
+            messages = item["messages"]
+            for msg in messages:
+                if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+                    raise PostProcessorError("each chat message must include role and content")
+            out.append({"messages": messages, "metadata": item.get("metadata", {})})
+        return out
+
     try:
         res_cfg = LLMResourceConfig(**cfg_dict)
         client = LLMClient(model_name, res_cfg)
@@ -94,9 +118,13 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
 
             if kind == "generate_simple":
                 try:
+                    prompts = msg["prompts"]
+                    pre_spec = msg.get("pre_processor")
+                    if pre_spec:
+                        prompts = _normalize_simple_prompts(post_processor.execute(prompts, pre_spec))
                     sc = SamplingConfig(**msg["sampling"])
                     generation_out = client.generate_simple(
-                        msg["prompts"],
+                        prompts,
                         sc,
                         include_metadata=msg.get("include_metadata", True),
                     )
@@ -121,9 +149,13 @@ def worker_loop(cmd_q: mp.Queue, res_q: mp.Queue, model_name: str, cfg_dict: Dic
 
             if kind == "generate_chat":
                 try:
+                    prompts = msg["prompts"]
+                    pre_spec = msg.get("pre_processor")
+                    if pre_spec:
+                        prompts = _normalize_chat_prompts(post_processor.execute(prompts, pre_spec))
                     sc = SamplingConfig(**msg["sampling"])
                     generation_out = client.generate_chat(
-                        msg["prompts"],
+                        prompts,
                         sc,
                         output_field=msg.get("output_field", "output"),
                         include_metadata=msg.get("include_metadata", True),

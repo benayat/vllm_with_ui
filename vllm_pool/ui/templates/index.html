@@ -102,10 +102,34 @@
                                 <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
                                 <input id="g_pp_script_deps" size="40" placeholder="scipy,numpy"/>
                             </div>
+                            <div class="mt-8 row script-builder-grid">
+                                <input id="g_pp_cfg_key" size="16" placeholder="config key"/>
+                                <select id="g_pp_cfg_type">
+                                    <option value="string">string</option>
+                                    <option value="number">number</option>
+                                    <option value="boolean">boolean</option>
+                                    <option value="json">json</option>
+                                </select>
+                                <input id="g_pp_cfg_value" size="20" placeholder="config value"/>
+                                <button type="button" onclick="addScriptConfigEntry('g')">Add config entry</button>
+                            </div>
+                            <div id="g_pp_cfg_rows" class="script-config-rows"></div>
+                            <div class="muted mt-8">Drag the script card into a target zone.</div>
+                            <div class="row mt-8">
+                                <div id="g_script_card" class="script-drag-card" draggable="true">Python script draft</div>
+                                <div id="g_drop_pre" class="script-dropzone" data-target="pre">Drop for preprocessing</div>
+                                <div id="g_drop_post" class="script-dropzone" data-target="post">Drop for postprocessing</div>
+                            </div>
                             <div class="mt-8 row">
                                 <input id="g_pp_script_entrypoint" size="16" value="process"/>
-                                <button type="button" onclick="buildPythonScriptProcessorSpec('g')">Use script as post-processor</button>
+                                <button type="button" onclick="buildPythonScriptProcessorSpec('g', 'pre')">Use script as pre-processor</button>
+                                <button type="button" onclick="buildPythonScriptProcessorSpec('g', 'post')">Use script as post-processor</button>
                             </div>
+                        </div>
+                        <div class="fieldset mt-8">
+                            <label><b>Pre-processor spec JSON (optional)</b></label><br>
+                            <textarea id="g_pre_processor" rows="6" cols="40" class="mono" placeholder='{"name":"python_script","config":{"code":"...","entrypoint":"process"},"runtime":{"dependencies":[],"auto_install":true},"on_error":"fail"}'></textarea>
+                            <span id="g_pre_processor_status" class="field-status muted">Optional.</span>
                         </div>
                         <div class="fieldset mt-8">
                             <label><b>Post-processor spec JSON (optional)</b></label><br>
@@ -191,10 +215,34 @@
                                 <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
                                 <input id="c_pp_script_deps" size="40" placeholder="scipy,numpy"/>
                             </div>
+                            <div class="mt-8 row script-builder-grid">
+                                <input id="c_pp_cfg_key" size="16" placeholder="config key"/>
+                                <select id="c_pp_cfg_type">
+                                    <option value="string">string</option>
+                                    <option value="number">number</option>
+                                    <option value="boolean">boolean</option>
+                                    <option value="json">json</option>
+                                </select>
+                                <input id="c_pp_cfg_value" size="20" placeholder="config value"/>
+                                <button type="button" onclick="addScriptConfigEntry('c')">Add config entry</button>
+                            </div>
+                            <div id="c_pp_cfg_rows" class="script-config-rows"></div>
+                            <div class="muted mt-8">Drag the script card into a target zone.</div>
+                            <div class="row mt-8">
+                                <div id="c_script_card" class="script-drag-card" draggable="true">Python script draft</div>
+                                <div id="c_drop_pre" class="script-dropzone" data-target="pre">Drop for preprocessing</div>
+                                <div id="c_drop_post" class="script-dropzone" data-target="post">Drop for postprocessing</div>
+                            </div>
                             <div class="mt-8 row">
                                 <input id="c_pp_script_entrypoint" size="16" value="process"/>
-                                <button type="button" onclick="buildPythonScriptProcessorSpec('c')">Use script as post-processor</button>
+                                <button type="button" onclick="buildPythonScriptProcessorSpec('c', 'pre')">Use script as pre-processor</button>
+                                <button type="button" onclick="buildPythonScriptProcessorSpec('c', 'post')">Use script as post-processor</button>
                             </div>
+                        </div>
+                        <div class="fieldset mt-8">
+                            <label><b>Pre-processor spec JSON (optional)</b></label><br>
+                            <textarea id="c_pre_processor" rows="6" cols="40" class="mono" placeholder='{"name":"python_script","config":{"code":"...","entrypoint":"process"},"runtime":{"dependencies":[],"auto_install":true},"on_error":"fail"}'></textarea>
+                            <span id="c_pre_processor_status" class="field-status muted">Optional.</span>
                         </div>
                         <div class="fieldset mt-8">
                             <label><b>Post-processor spec JSON (optional)</b></label><br>

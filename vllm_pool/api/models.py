@@ -62,6 +62,7 @@ class GenerateSimpleRequest(BaseModel):
     prompts: List[Dict[str, Any]]
     sampling: SamplingConfigModel
     include_metadata: bool = True
+    pre_processor: Optional[PostProcessorSpecModel] = None
     post_processor: Optional[PostProcessorSpecModel] = None
 
 
@@ -81,6 +82,7 @@ class GenerateChatRequest(BaseModel):
     sampling: SamplingConfigModel
     output_field: str = "output"
     include_metadata: bool = True
+    pre_processor: Optional[PostProcessorSpecModel] = None
     post_processor: Optional[PostProcessorSpecModel] = None
 
 
@@ -92,4 +94,5 @@ class OfflineJobRequest(BaseModel):
     output_field: str = "output"
     include_metadata: bool = True
     cleanup_model_after_job: bool = False
+    pre_processor: Optional[PostProcessorSpecModel] = None
     post_processor: Optional[PostProcessorSpecModel] = None
