@@ -21,8 +21,9 @@
             <div class="row">
                 <button onclick="startModel()">Start</button>
                 <form onsubmit="stopWorker(event)">
-                    <input id="s_model" placeholder="model to stop" size="28"/>
-                    <input id="s_gpu" type="number" min="0" class="w-90" placeholder="gpu"/>
+                    <select id="s_target" class="minw-340" aria-label="Deployed model to stop">
+                        <option value="">— select deployed model —</option>
+                    </select>
                     <button type="submit">Stop</button>
                 </form>
                 <span id="start_msg" class="muted" role="status" aria-live="polite"></span>

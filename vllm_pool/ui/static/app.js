@@ -1,5 +1,6 @@
 let lastResult = null;
 let evtSource = null;
+let liveTailBuffer = [];
 
 const samplingDefault = { temperature: 0.0, top_p: 1.0, max_tokens: 256 };
 const UI_STATE_DEFAULT = {
@@ -212,7 +213,8 @@ async function refreshWorkers() {
     const res = await fetch('/workers'); const j = await res.json();
     const sel = document.getElementById('workerSel'); sel.innerHTML='';
     const arr = j.workers || [];
-    if (!arr.length) { const o=document.createElement('option'); o.value=''; o.textContent='— no workers —'; sel.appendChild(o); closeSSE(); document.getElementById('progressBox').textContent=''; return; }
+    refreshStopTargets(arr);
+    if (!arr.length) { const o=document.createElement('option'); o.value=''; o.textContent='— no workers —'; sel.appendChild(o); closeSSE(); liveTailBuffer = []; document.getElementById('progressBox').textContent=''; return; }
     for (const w of arr) {
         const o=document.createElement('option');
         o.value = w.key; o.textContent = `gpu ${w.gpu_id} — ${w.model}`; sel.appendChild(o);
@@ -237,17 +239,55 @@ async function refresh() {
 function closeSSE(){ if (evtSource){ try{ evtSource.close(); }catch(_){} evtSource=null; } }
 function switchWorker(){
     const key = document.getElementById('workerSel').value;
-    if (!key) { closeSSE(); document.getElementById('progressBox').textContent=''; return; }
+    if (!key) { closeSSE(); liveTailBuffer = []; document.getElementById('progressBox').textContent=''; return; }
+    liveTailBuffer = [];
     openSSE(`/events/worker/${encodeURIComponent(key)}`);
 }
 function openSSE(url) {
     closeSSE();
     evtSource = new EventSource(url);
     evtSource.addEventListener('tail', (ev) => {
-        try { const obj = JSON.parse(ev.data); const lines = (obj.lines||[]).slice(-5);
-            document.getElementById('progressBox').textContent = lines.join("\n"); }
+        try {
+            const obj = JSON.parse(ev.data);
+            const incoming = Array.isArray(obj.lines) ? obj.lines.map((s) => String(s || '').trim()).filter(Boolean) : [];
+            if (incoming.length) {
+                for (const line of incoming) {
+                    if (!liveTailBuffer.length || liveTailBuffer[liveTailBuffer.length - 1] !== line) {
+                        liveTailBuffer.push(line);
+                    }
+                }
+                liveTailBuffer = liveTailBuffer.slice(-5);
+            }
+            document.getElementById('progressBox').textContent = liveTailBuffer.join("\n");
+        }
         catch { /* ignore */ }
     });
+}
+
+function refreshStopTargets(workers) {
+    const sel = document.getElementById('s_target');
+    if (!sel) return;
+    const prior = sel.value;
+    sel.innerHTML = '';
+    const arr = Array.isArray(workers) ? workers : [];
+    if (!arr.length) {
+        const o = document.createElement('option');
+        o.value = '';
+        o.textContent = '— no deployed models —';
+        sel.appendChild(o);
+        return;
+    }
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— select deployed model —';
+    sel.appendChild(placeholder);
+    for (const w of arr) {
+        const o = document.createElement('option');
+        o.value = w.key;
+        o.textContent = `gpu ${w.gpu_id} — ${w.model}`;
+        sel.appendChild(o);
+    }
+    if ([...sel.options].some((o) => o.value === prior)) sel.value = prior;
 }
 
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
@@ -588,9 +628,9 @@ async function startModel() {
 
 async function stopWorker(e) {
     e.preventDefault();
-    const m = document.getElementById('s_model').value.trim();
-    const g = document.getElementById('s_gpu').value.trim();
-    if (!m || g === "") return;
+    const target = document.getElementById('s_target').value;
+    if (!target || !target.includes('|')) return;
+    const [m, g] = target.split('|');
     const form = new FormData(); form.append('model_name', m); form.append('gpu_id', Number(g));
     try { const res = await fetch('/stop', { method:'POST', body: form }); const j = await res.json();
         if (!res.ok) throw new Error(j.detail || JSON.stringify(j));
