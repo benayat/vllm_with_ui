@@ -174,6 +174,48 @@ button:disabled { opacity: 0.7; cursor: not-allowed; }
     margin-top: 6px;
     font-size: 12px;
 }
+.script-builder-grid > * { margin-right: 6px; }
+.script-config-rows {
+    margin-top: 8px;
+    border: 1px solid #e5e8f0;
+    border-radius: 8px;
+    padding: 8px;
+    background: #fff;
+    display: grid;
+    gap: 6px;
+}
+.script-config-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px dashed #d9dfeb;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+.script-drag-card {
+    border: 1px solid #89a1c6;
+    background: #f5f9ff;
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: grab;
+}
+.script-dropzone {
+    min-width: 190px;
+    border: 2px dashed #b7c3d8;
+    border-radius: 10px;
+    padding: 10px;
+    background: #fbfcff;
+    color: #3b475d;
+}
+.script-dropzone.active-target {
+    border-color: #0b63ce;
+    background: #eaf3ff;
+}
+.script-dropzone.drag-over {
+    border-color: #0a7a0a;
+    background: #eefbf1;
+}
 
 .toast-container {
     position: fixed;

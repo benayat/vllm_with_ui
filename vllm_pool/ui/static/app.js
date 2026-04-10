@@ -15,10 +15,16 @@ const validationState = {
     c_sampling: false,
     g_prompt: false,
     c_msgs: false,
+    g_pre_processor: true,
     g_post_processor: true,
+    c_pre_processor: true,
     c_post_processor: true,
     g_file_prompt: true,
     c_file_prompt: true,
+};
+const scriptBuilderState = {
+    g: { configEntries: [], target: 'post' },
+    c: { configEntries: [], target: 'post' },
 };
 
 function nowTimeLabel() {
@@ -523,11 +529,126 @@ function deleteSamplingBankItem(prefix) {
     refreshSamplingBankSelectors();
 }
 
-function buildPythonScriptProcessorSpec(prefix) {
+function parseConfigValueByType(type, rawValue) {
+    if (type === 'number') {
+        const parsed = Number(rawValue);
+        if (!Number.isFinite(parsed)) throw new Error('Number config value is invalid.');
+        return parsed;
+    }
+    if (type === 'boolean') {
+        const val = String(rawValue || '').trim().toLowerCase();
+        if (val === 'true') return true;
+        if (val === 'false') return false;
+        throw new Error("Boolean config value must be 'true' or 'false'.");
+    }
+    if (type === 'json') {
+        return JSON.parse(rawValue);
+    }
+    return String(rawValue ?? '');
+}
+
+function renderScriptConfigEntries(prefix) {
+    const listEl = document.getElementById(`${prefix}_pp_cfg_rows`);
+    if (!listEl) return;
+    const entries = scriptBuilderState[prefix]?.configEntries || [];
+    listEl.innerHTML = '';
+    if (!entries.length) {
+        const muted = document.createElement('div');
+        muted.className = 'muted';
+        muted.textContent = 'No config entries yet.';
+        listEl.appendChild(muted);
+        return;
+    }
+    entries.forEach((entry, idx) => {
+        const row = document.createElement('div');
+        row.className = 'script-config-row mono';
+        const label = document.createElement('span');
+        label.textContent = `${entry.key} (${entry.type}) = ${JSON.stringify(entry.value)}`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Delete';
+        btn.onclick = () => {
+            scriptBuilderState[prefix].configEntries.splice(idx, 1);
+            renderScriptConfigEntries(prefix);
+        };
+        row.appendChild(label);
+        row.appendChild(btn);
+        listEl.appendChild(row);
+    });
+}
+
+function addScriptConfigEntry(prefix) {
+    const keyEl = document.getElementById(`${prefix}_pp_cfg_key`);
+    const typeEl = document.getElementById(`${prefix}_pp_cfg_type`);
+    const valueEl = document.getElementById(`${prefix}_pp_cfg_value`);
+    const key = (keyEl?.value || '').trim();
+    const type = (typeEl?.value || 'string').trim();
+    const rawValue = (valueEl?.value || '').trim();
+    if (!key) { notify('err', 'Config key is required.'); return; }
+    try {
+        const value = parseConfigValueByType(type, rawValue);
+        const entries = scriptBuilderState[prefix].configEntries.filter((it) => it.key !== key);
+        entries.push({ key, type, value });
+        scriptBuilderState[prefix].configEntries = entries;
+        renderScriptConfigEntries(prefix);
+        keyEl.value = '';
+        valueEl.value = '';
+        notify('ok', `Added script config key '${key}'.`);
+    } catch (e) {
+        notify('err', `Invalid config value: ${e.message}`);
+    }
+}
+
+function getScriptBuilderConfig(prefix) {
+    const entries = scriptBuilderState[prefix]?.configEntries || [];
+    return Object.fromEntries(entries.map((entry) => [entry.key, entry.value]));
+}
+
+function setScriptBuilderTarget(prefix, target) {
+    scriptBuilderState[prefix].target = target === 'pre' ? 'pre' : 'post';
+    const preZone = document.getElementById(`${prefix}_drop_pre`);
+    const postZone = document.getElementById(`${prefix}_drop_post`);
+    if (preZone) preZone.classList.toggle('active-target', scriptBuilderState[prefix].target === 'pre');
+    if (postZone) postZone.classList.toggle('active-target', scriptBuilderState[prefix].target === 'post');
+}
+
+function initScriptBuilderDnD(prefix) {
+    const card = document.getElementById(`${prefix}_script_card`);
+    const zones = [
+        document.getElementById(`${prefix}_drop_pre`),
+        document.getElementById(`${prefix}_drop_post`),
+    ].filter(Boolean);
+    if (!card || !zones.length) return;
+    card.addEventListener('dragstart', () => {
+        card.dataset.dragging = '1';
+    });
+    card.addEventListener('dragend', () => {
+        card.dataset.dragging = '';
+        zones.forEach((z) => z.classList.remove('drag-over'));
+    });
+    zones.forEach((zone) => {
+        zone.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            zone.classList.add('drag-over');
+        });
+        zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+        zone.addEventListener('drop', (ev) => {
+            ev.preventDefault();
+            zone.classList.remove('drag-over');
+            const target = zone.dataset.target === 'pre' ? 'pre' : 'post';
+            setScriptBuilderTarget(prefix, target);
+            buildPythonScriptProcessorSpec(prefix, target);
+        });
+    });
+    setScriptBuilderTarget(prefix, scriptBuilderState[prefix].target);
+}
+
+function buildPythonScriptProcessorSpec(prefix, targetOverride = null) {
     const codeEl = document.getElementById(`${prefix}_pp_script_code`);
     const depsEl = document.getElementById(`${prefix}_pp_script_deps`);
     const entrypointEl = document.getElementById(`${prefix}_pp_script_entrypoint`);
-    const targetSpecEl = document.getElementById(`${prefix}_post_processor`);
+    const target = targetOverride || scriptBuilderState[prefix]?.target || 'post';
+    const targetSpecEl = document.getElementById(`${prefix}_${target}_processor`);
     if (!codeEl || !targetSpecEl) return;
     const code = (codeEl.value || '').trim();
     if (!code) { notify('err', 'Script code is required.'); return; }
@@ -536,13 +657,15 @@ function buildPythonScriptProcessorSpec(prefix) {
         .map((x) => x.trim())
         .filter((x) => x.length > 0);
     const entrypoint = ((entrypointEl?.value || '').trim() || 'process');
+    const config = getScriptBuilderConfig(prefix);
     const spec = {
         name: 'python_script',
-        config: { code, entrypoint },
+        config: { code, entrypoint, ...config },
         runtime: { dependencies, auto_install: true },
         on_error: 'fail',
     };
     targetSpecEl.value = JSON.stringify(spec, null, 2);
+    notify('ok', `Script applied to ${target === 'pre' ? 'pre' : 'post'}-processor.`);
 }
 
 function validateStartConfig(cfg) {
@@ -646,8 +769,8 @@ async function stopWorker(e) {
 function updateGenerateButtonsState() {
     const simpleBtn = document.getElementById('btnSimpleGenerate');
     const chatBtn = document.getElementById('btnChatGenerate');
-    if (simpleBtn) simpleBtn.disabled = !(validationState.g_sampling && validationState.g_prompt && validationState.g_post_processor && validationState.g_file_prompt);
-    if (chatBtn) chatBtn.disabled = !(validationState.c_sampling && validationState.c_msgs && validationState.c_post_processor && validationState.c_file_prompt);
+    if (simpleBtn) simpleBtn.disabled = !(validationState.g_sampling && validationState.g_prompt && validationState.g_pre_processor && validationState.g_post_processor && validationState.g_file_prompt);
+    if (chatBtn) chatBtn.disabled = !(validationState.c_sampling && validationState.c_msgs && validationState.c_pre_processor && validationState.c_post_processor && validationState.c_file_prompt);
 }
 
 function formatJsonParseError(rawMessage, rawValue) {
@@ -736,6 +859,7 @@ async function runFormValidations() {
         itemValidator: (p) => p && typeof p === 'object' && typeof p.prompt === 'string',
         itemError: "Each item must include a string 'prompt'.",
     });
+    validateJsonField({ inputId: 'g_pre_processor', statusId: 'g_pre_processor_status', key: 'g_pre_processor', optional: true });
     validateJsonField({ inputId: 'g_post_processor', statusId: 'g_post_processor_status', key: 'g_post_processor', optional: true });
 
     validateJsonField({ inputId: 'c_sampling', statusId: 'c_sampling_status', key: 'c_sampling' });
@@ -747,6 +871,7 @@ async function runFormValidations() {
         itemValidator: (p) => p && typeof p === 'object' && Array.isArray(p.messages),
         itemError: "Each item must include a 'messages' array.",
     });
+    validateJsonField({ inputId: 'c_pre_processor', statusId: 'c_pre_processor_status', key: 'c_pre_processor', optional: true });
     validateJsonField({ inputId: 'c_post_processor', statusId: 'c_post_processor_status', key: 'c_post_processor', optional: true });
     await validateUploadInput({
         inputId: 'g_file',
@@ -768,7 +893,7 @@ async function runFormValidations() {
 
 async function submitSimple() {
     await runFormValidations();
-    if (!validationState.g_sampling || !validationState.g_prompt || !validationState.g_post_processor || !validationState.g_file_prompt) {
+    if (!validationState.g_sampling || !validationState.g_prompt || !validationState.g_pre_processor || !validationState.g_post_processor || !validationState.g_file_prompt) {
         setInlineMessage('g_msg', 'err', 'Please fix invalid JSON fields before submitting.');
         return;
     }
@@ -778,6 +903,7 @@ async function submitSimple() {
     const cleanupModelAfterJob = document.getElementById('g_cleanup_model').checked;
     const autoStart = document.getElementById('g_autostart').checked;
     const includeMetadata = document.getElementById('g_include_metadata').checked;
+    const preProcessor = parseJSONSafe(document.getElementById('g_pre_processor').value, null);
     const postProcessor = parseJSONSafe(document.getElementById('g_post_processor').value, null);
     const sampling = parseJSONSafe(document.getElementById('g_sampling').value, samplingDefault);
     const fileEl = document.getElementById('g_file');
@@ -796,8 +922,8 @@ async function submitSimple() {
         const headers = {'Content-Type':'application/json'};
         if (useOffline) headers['X-UI-Request'] = '1';
         const payload = useOffline
-            ? { model_name: m, type: 'generate', prompts, sampling, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob, post_processor: postProcessor }
-            : { model_name: m, prompts, sampling, include_metadata: includeMetadata, post_processor: postProcessor };
+            ? { model_name: m, type: 'generate', prompts, sampling, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob, pre_processor: preProcessor, post_processor: postProcessor }
+            : { model_name: m, prompts, sampling, include_metadata: includeMetadata, pre_processor: preProcessor, post_processor: postProcessor };
         const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
         const j = await res.json();
         if (!res.ok) { setInlineMessage('g_msg', 'err', j.detail || 'error'); notify('err', j.detail || 'Generation request failed.'); return; }
@@ -814,7 +940,7 @@ async function submitSimple() {
 
 async function submitChat() {
     await runFormValidations();
-    if (!validationState.c_sampling || !validationState.c_msgs || !validationState.c_post_processor || !validationState.c_file_prompt) {
+    if (!validationState.c_sampling || !validationState.c_msgs || !validationState.c_pre_processor || !validationState.c_post_processor || !validationState.c_file_prompt) {
         setInlineMessage('c_msg', 'err', 'Please fix invalid JSON fields before submitting.');
         return;
     }
@@ -826,6 +952,7 @@ async function submitChat() {
     const sampling = parseJSONSafe(document.getElementById('c_sampling').value, samplingDefault);
     const outField = document.getElementById('c_outfield').value || "output";
     const includeMetadata = document.getElementById('c_include_metadata').checked;
+    const preProcessor = parseJSONSafe(document.getElementById('c_pre_processor').value, null);
     const postProcessor = parseJSONSafe(document.getElementById('c_post_processor').value, null);
     const fileEl = document.getElementById('c_file');
     let prompts = parseJSONSafe(document.getElementById('c_msgs').value, []);
@@ -838,8 +965,8 @@ async function submitChat() {
         const headers = {'Content-Type':'application/json'};
         if (useOffline) headers['X-UI-Request'] = '1';
         const payload = useOffline
-            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob, post_processor: postProcessor }
-            : { model_name: m, prompts, sampling, output_field: outField, include_metadata: includeMetadata, post_processor: postProcessor };
+            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob, pre_processor: preProcessor, post_processor: postProcessor }
+            : { model_name: m, prompts, sampling, output_field: outField, include_metadata: includeMetadata, pre_processor: preProcessor, post_processor: postProcessor };
         const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
         const j = await res.json();
         if (!res.ok) { setInlineMessage('c_msg', 'err', j.detail || 'error'); notify('err', j.detail || 'Chat request failed.'); return; }
@@ -860,11 +987,15 @@ async function bootstrapUI() {
     refreshProcessorPresetSelectors();
     refreshPromptBankSelectors();
     refreshSamplingBankSelectors();
-    for (const id of ['g_sampling', 'g_prompt', 'g_post_processor', 'c_sampling', 'c_msgs', 'c_post_processor']) {
+    for (const id of ['g_sampling', 'g_prompt', 'g_pre_processor', 'g_post_processor', 'c_sampling', 'c_msgs', 'c_pre_processor', 'c_post_processor']) {
         const el = document.getElementById(id);
         if (!el) continue;
         el.addEventListener('input', () => { runFormValidations(); });
         el.addEventListener('blur', () => { runFormValidations(); });
+    }
+    for (const prefix of ['g', 'c']) {
+        renderScriptConfigEntries(prefix);
+        initScriptBuilderDnD(prefix);
     }
     for (const id of ['g_file', 'c_file']) {
         const el = document.getElementById(id);

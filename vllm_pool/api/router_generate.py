@@ -26,6 +26,7 @@ def bind(pool: PoolManager) -> APIRouter:
                 "prompts": prompts,
                 "sampling": req.sampling.model_dump(),
                 "include_metadata": req.include_metadata,
+                "pre_processor": req.pre_processor.model_dump() if req.pre_processor else None,
                 "post_processor": req.post_processor.model_dump() if req.post_processor else None,
             },
         }
@@ -53,6 +54,7 @@ def bind(pool: PoolManager) -> APIRouter:
                 "sampling": req.sampling.model_dump(),
                 "output_field": req.output_field,
                 "include_metadata": req.include_metadata,
+                "pre_processor": req.pre_processor.model_dump() if req.pre_processor else None,
                 "post_processor": req.post_processor.model_dump() if req.post_processor else None,
             },
         }
@@ -86,6 +88,7 @@ def bind(pool: PoolManager) -> APIRouter:
                 "prompts": normalized,
                 "sampling": sampling,
                 "include_metadata": req.include_metadata,
+                "pre_processor": req.pre_processor.model_dump() if req.pre_processor else None,
                 "post_processor": req.post_processor.model_dump() if req.post_processor else None,
             }
         else:
@@ -106,6 +109,7 @@ def bind(pool: PoolManager) -> APIRouter:
                 "sampling": sampling,
                 "output_field": req.output_field,
                 "include_metadata": req.include_metadata,
+                "pre_processor": req.pre_processor.model_dump() if req.pre_processor else None,
                 "post_processor": req.post_processor.model_dump() if req.post_processor else None,
             }
 
