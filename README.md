@@ -3,7 +3,7 @@
 A FastAPI service and minimal UI to manage up to N independent **vLLM** workers (one process per GPU) with a clear separation of concerns:
 
 * **Start Model Panel**: lifecycle & vLLM resource config (per worker / GPU).
-* **Generate Panel**: send prompts to **already-running** models only.
+* **Generate Panel**: send prompts to already-running models, with optional UI auto-start if missing.
 * **Per-GPU Live Tail**: SSE streams the **last 5 log/tqdm lines** from each worker; pick the active GPU tail from a dropdown.
 
 Object-oriented core (Python) split into domain types, worker, pool, and an adapter for vLLM.
@@ -14,7 +14,7 @@ Object-oriented core (Python) split into domain types, worker, pool, and an adap
 
 * ✅ One worker process per GPU with `spawn` start method (safe with PyTorch/vLLM).
 * ✅ Load the **same model on multiple GPUs** or different models per GPU.
-* ✅ Strict separation: **only** Start panel controls lifecycle; Generate only prompts.
+* ✅ Clear lifecycle controls in Start panel, with optional Generate-side auto-start for convenience.
 * ✅ **Per-GPU** SSE endpoint streaming log tail every \~2s (tqdm included).
 * ✅ Batch generation:
 
@@ -152,7 +152,7 @@ ssh -J <login node> -N -L <remote port>:localhost:<local port> <username>@<compu
     * For both tabs, you can tick **Submit via offline queue endpoint** to send to `POST /generate/offline` instead of the regular generate endpoints.
     * You can also keep **Auto-start model if missing** enabled so the UI will call `/start` using the Start panel's vLLM config JSON (defaults shown there) before queue submission.
 
-> The Generate panel **never** starts models. If the model isn’t running: API returns **409**.
+> By default, Generate requests target already-running models. If you enable **Auto-start model if missing** in the UI, the UI will call `/start` first and then submit to generation/offline endpoints.
 
 ---
 

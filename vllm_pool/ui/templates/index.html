@@ -15,9 +15,9 @@
     <section class="card" aria-labelledby="start-model-title">
         <h3 id="start-model-title">Start model</h3>
         <div class="stack">
-            <div><label>Model name</label><br><input id="mname" size="48" placeholder="Qwen/Qwen2.5-7B-Instruct"/></div>
-            <div><label>GPU (optional)</label><br><input id="gpu" type="number" min="0" class="w-90" placeholder="e.g. 0"/></div>
-            <div><label>vLLM config JSON</label><br><textarea id="cfg" rows="10" cols="62" class="mono">__DEFAULT_CFG__</textarea><br><small class="muted">Contract: use <code>model_impl</code> ("vllm" or "transformers"); <code>use_transformers</code> is no longer supported.</small></div>
+            <div><label for="mname">Model name</label><br><input id="mname" size="48" placeholder="Qwen/Qwen2.5-7B-Instruct"/></div>
+            <div><label for="gpu">GPU (optional)</label><br><input id="gpu" type="number" min="0" class="w-90" placeholder="e.g. 0"/></div>
+            <div><label for="cfg">vLLM config JSON</label><br><textarea id="cfg" rows="10" cols="62" class="mono">__DEFAULT_CFG__</textarea><br><small class="muted">Contract: use <code>model_impl</code> ("vllm" or "transformers"); <code>use_transformers</code> is no longer supported.</small></div>
             <div class="row">
                 <button onclick="startModel()">Start</button>
                 <form onsubmit="stopWorker(event)">
@@ -38,6 +38,7 @@
             <select id="workerSel" onchange="switchWorker()"></select>
         </div>
         <div id="statusSummary" class="summary-grid"></div>
+        <div id="statusHint" class="hint muted" role="status" aria-live="polite"></div>
         <pre id="status"></pre>
         <div class="mt-8">
             <label class="muted">Live tail (last ~5 lines for selected worker)</label>
@@ -73,10 +74,20 @@
                         </div>
                         <div class="mt-8">
                             <label><input id="g_autostart" type="checkbox" checked/> Auto-start model if missing (uses Start panel vLLM config JSON)</label>
+                            <div class="hint muted">When enabled, Generate can trigger <b>/start</b> automatically before queue submission.</div>
                         </div>
                     </div>
                     <div class="fieldset">
-                        <label><b>Sampling params</b></label><br>
+                        <label for="g_sampling"><b>Sampling params</b></label><br>
+                        <div class="form-grid mt-8">
+                            <div><label class="muted" for="g_temp">Temperature</label><br><input id="g_temp" type="number" step="0.1" min="0" value="0.0"/></div>
+                            <div><label class="muted" for="g_top_p">Top-p</label><br><input id="g_top_p" type="number" step="0.01" min="0" max="1" value="1.0"/></div>
+                            <div><label class="muted" for="g_max_tokens">Max tokens</label><br><input id="g_max_tokens" type="number" step="1" min="1" value="256"/></div>
+                        </div>
+                        <div class="mt-8 row">
+                            <button type="button" onclick="applySamplingForm('g')">Apply form values to JSON</button>
+                            <button type="button" onclick="syncSamplingFormFromJson('g')">Load values from JSON</button>
+                        </div>
                         <textarea id="g_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
                         <span id="g_sampling_status" class="field-status muted">Not validated yet.</span>
                         <div class="mt-8 row">
@@ -192,10 +203,20 @@
                         </div>
                         <div class="mt-8">
                             <label><input id="c_autostart" type="checkbox" checked/> Auto-start model if missing (uses Start panel vLLM config JSON)</label>
+                            <div class="hint muted">When enabled, Generate can trigger <b>/start</b> automatically before queue submission.</div>
                         </div>
                     </div>
                     <div class="fieldset">
-                        <label><b>Sampling params</b></label><br>
+                        <label for="c_sampling"><b>Sampling params</b></label><br>
+                        <div class="form-grid mt-8">
+                            <div><label class="muted" for="c_temp">Temperature</label><br><input id="c_temp" type="number" step="0.1" min="0" value="0.0"/></div>
+                            <div><label class="muted" for="c_top_p">Top-p</label><br><input id="c_top_p" type="number" step="0.01" min="0" max="1" value="1.0"/></div>
+                            <div><label class="muted" for="c_max_tokens">Max tokens</label><br><input id="c_max_tokens" type="number" step="1" min="1" value="256"/></div>
+                        </div>
+                        <div class="mt-8 row">
+                            <button type="button" onclick="applySamplingForm('c')">Apply form values to JSON</button>
+                            <button type="button" onclick="syncSamplingFormFromJson('c')">Load values from JSON</button>
+                        </div>
                         <textarea id="c_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
                         <span id="c_sampling_status" class="field-status muted">Not validated yet.</span>
                         <div class="mt-8 row">
@@ -289,7 +310,7 @@
                 </div>
                 <div class="stack minw-260">
                     <div class="fieldset">
-                        <label><b>Output field</b></label><br>
+                        <label for="c_outfield"><b>Output field</b></label><br>
                         <input id="c_outfield" size="20" value="output"/>
                         <div class="mt-8">
                             <label><input id="c_include_metadata" type="checkbox" checked/> Include metadata in output rows</label>

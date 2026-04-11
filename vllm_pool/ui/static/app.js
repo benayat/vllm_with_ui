@@ -142,6 +142,12 @@ function renderStatusSummary(statusObj) {
         { k: 'Jobs', v: String(jobs) },
         { k: 'Health', v: hasError ? 'Degraded' : 'OK' },
     ]);
+    const hintEl = document.getElementById('statusHint');
+    if (!hintEl) return;
+    if (hasError) hintEl.textContent = `Status endpoint returned an error: ${statusObj.error}`;
+    else if (workers === 0) hintEl.textContent = 'No workers are running yet. Start a model in the Start model panel to enable generation.';
+    else if (jobs > 0) hintEl.textContent = `${jobs} job(s) pending or running. You can monitor progress in Recent activity and the response panel.`;
+    else hintEl.textContent = 'System is healthy. You can submit generation jobs now.';
 }
 
 function renderResultSummary(resultObj) {
@@ -297,6 +303,53 @@ function refreshStopTargets(workers) {
 }
 
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
+
+function samplingFormIds(prefix) {
+    return {
+        temp: `${prefix}_temp`,
+        topP: `${prefix}_top_p`,
+        maxTokens: `${prefix}_max_tokens`,
+        samplingJson: `${prefix}_sampling`,
+    };
+}
+
+function applySamplingForm(prefix, notifyUser = true) {
+    const ids = samplingFormIds(prefix);
+    const temp = Number(document.getElementById(ids.temp)?.value);
+    const topP = Number(document.getElementById(ids.topP)?.value);
+    const maxTokens = Number(document.getElementById(ids.maxTokens)?.value);
+    if (!Number.isFinite(temp) || temp < 0) { notify('err', 'Temperature must be a non-negative number.'); return; }
+    if (!Number.isFinite(topP) || topP < 0 || topP > 1) { notify('err', 'Top-p must be between 0 and 1.'); return; }
+    if (!Number.isInteger(maxTokens) || maxTokens < 1) { notify('err', 'Max tokens must be an integer >= 1.'); return; }
+    const samplingEl = document.getElementById(ids.samplingJson);
+    const current = parseJSONSafe(samplingEl?.value, {});
+    const next = {
+        ...(current && typeof current === 'object' && !Array.isArray(current) ? current : {}),
+        temperature: temp,
+        top_p: topP,
+        max_tokens: maxTokens,
+    };
+    samplingEl.value = JSON.stringify(next, null, 2);
+    runFormValidations();
+    if (notifyUser) notify('ok', 'Sampling JSON updated from form fields.');
+}
+
+function syncSamplingFormFromJson(prefix, notifyUser = true) {
+    const ids = samplingFormIds(prefix);
+    const sampling = parseJSONSafe(document.getElementById(ids.samplingJson)?.value, null);
+    if (!sampling || typeof sampling !== 'object' || Array.isArray(sampling)) {
+        if (notifyUser) notify('err', 'Sampling JSON must be a JSON object.');
+        return;
+    }
+    const setIfFinite = (id, value) => {
+        const num = Number(value);
+        if (Number.isFinite(num)) document.getElementById(id).value = String(num);
+    };
+    setIfFinite(ids.temp, sampling.temperature);
+    setIfFinite(ids.topP, sampling.top_p);
+    setIfFinite(ids.maxTokens, sampling.max_tokens);
+    if (notifyUser) notify('ok', 'Sampling form fields loaded from JSON.');
+}
 
 async function loadUiState() {
     try {
@@ -1003,6 +1056,9 @@ async function bootstrapUI() {
         if (!el) continue;
         el.addEventListener('input', () => { runFormValidations(); });
         el.addEventListener('blur', () => { runFormValidations(); });
+    }
+    for (const prefix of ['g', 'c']) {
+        syncSamplingFormFromJson(prefix, false);
     }
     for (const prefix of ['g', 'c']) {
         renderScriptConfigEntries(prefix);
