@@ -108,6 +108,12 @@
                         <summary>Advanced options</summary>
                         <div class="fieldset mt-8">
                             <label><b>Quick script builder (optional)</b></label><br>
+                            <div class="mt-8">
+                                <label class="muted" for="g_pp_template_select">Template library</label><br>
+                                <select id="g_pp_template_select" class="minw-340"></select>
+                                <div id="g_pp_template_desc" class="hint muted">No template selected.</div>
+                                <div id="g_pp_template_params" class="template-param-grid mt-8"></div>
+                            </div>
                             <textarea id="g_pp_script_code" rows="8" cols="40" class="mono" placeholder='def process(generation_json, config):&#10;    # Return any JSON-serializable object&#10;    return generation_json'></textarea>
                             <div class="mt-8">
                                 <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
@@ -234,6 +240,12 @@
                         <summary>Advanced options</summary>
                         <div class="fieldset mt-8">
                             <label><b>Quick script builder (optional)</b></label><br>
+                            <div class="mt-8">
+                                <label class="muted" for="c_pp_template_select">Template library</label><br>
+                                <select id="c_pp_template_select" class="minw-340"></select>
+                                <div id="c_pp_template_desc" class="hint muted">No template selected.</div>
+                                <div id="c_pp_template_params" class="template-param-grid mt-8"></div>
+                            </div>
                             <textarea id="c_pp_script_code" rows="8" cols="40" class="mono" placeholder='def process(generation_json, config):&#10;    # Return any JSON-serializable object&#10;    return generation_json'></textarea>
                             <div class="mt-8">
                                 <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
