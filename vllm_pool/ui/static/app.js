@@ -26,6 +26,7 @@ import {
     addScriptConfigEntry as addScriptConfigEntryController,
     initScriptBuilderDnD as initScriptBuilderDnDController,
     buildPythonScriptProcessorSpec as buildPythonScriptProcessorSpecController,
+    renderScriptTemplateOptions as renderScriptTemplateOptionsController,
 } from './app/controllers/scriptBuilderController.js';
 import { toStartModelRequest, toSimpleGenerationRequest, toChatGenerationRequest } from './app/adapters/requests.js';
 import { toResultFromJob } from './app/adapters/responses.js';
@@ -58,8 +59,8 @@ const validationState = {
     c_file_prompt: true,
 };
 const scriptBuilderState = {
-    g: { configEntries: [], target: 'post' },
-    c: { configEntries: [], target: 'post' },
+    g: { configEntries: [], target: 'post', selectedTemplateId: '' },
+    c: { configEntries: [], target: 'post', selectedTemplateId: '' },
 };
 
 function nowTimeLabel() {
@@ -528,6 +529,10 @@ function buildPythonScriptProcessorSpec(prefix, targetOverride = null) {
     buildPythonScriptProcessorSpecController(prefix, scriptBuilderState, notify, targetOverride);
 }
 
+function renderScriptTemplateOptions(prefix) {
+    renderScriptTemplateOptionsController(prefix, scriptBuilderState, notify);
+}
+
 function validateStartConfig(cfg) {
     if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
         throw new Error('Start panel vLLM config JSON must be an object.');
@@ -872,6 +877,7 @@ export async function bootstrapUI() {
     }
     for (const prefix of ['g', 'c']) {
         renderScriptConfigEntries(prefix);
+        renderScriptTemplateOptions(prefix);
         initScriptBuilderDnD(prefix);
     }
     for (const id of ['g_file', 'c_file']) {
