@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "1bff7f98-f1f1-4f88-b365-6f7d77338f47",
     "name": "vLLM Pool - Requested Prompt Sets",
-    "description": "1 chat request and 4 generate/simple requests with the provided prompt variants.",
+    "description": "Async generation collection. /generate/chat and /generate/simple return 202 with {job_id,status}. Then call /jobs/{job_id} to fetch final result. Also includes /generate/offline examples for blocking/non-blocking behavior.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -33,7 +33,21 @@
         },
         "description": "Chat request containing 100 prompt entries from your list."
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Accepted async job', function () { pm.response.to.have.status(202); });",
+              "var data = pm.response.json();",
+              "pm.expect(data).to.have.property('job_id');",
+              "pm.collectionVariables.set('last_job_id', data.job_id);"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "2) Generate simple prompts (100 variants)",
@@ -62,7 +76,21 @@
         },
         "description": "Generate simple request for prompt set #2."
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Accepted async job', function () { pm.response.to.have.status(202); });",
+              "var data = pm.response.json();",
+              "pm.expect(data).to.have.property('job_id');",
+              "pm.collectionVariables.set('last_job_id', data.job_id);"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "3) Generate simple (You are an AI advisor...)",
@@ -91,7 +119,21 @@
         },
         "description": "Generate simple request for prompt set #3."
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Accepted async job', function () { pm.response.to.have.status(202); });",
+              "var data = pm.response.json();",
+              "pm.expect(data).to.have.property('job_id');",
+              "pm.collectionVariables.set('last_job_id', data.job_id);"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "4) Generate simple (You are an advisor...)",
@@ -120,7 +162,21 @@
         },
         "description": "Generate simple request for prompt set #4."
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Accepted async job', function () { pm.response.to.have.status(202); });",
+              "var data = pm.response.json();",
+              "pm.expect(data).to.have.property('job_id');",
+              "pm.collectionVariables.set('last_job_id', data.job_id);"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "5) Generate simple (You are an AI assistant...)",
@@ -149,7 +205,21 @@
         },
         "description": "Generate simple request for prompt set #5."
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Accepted async job', function () { pm.response.to.have.status(202); });",
+              "var data = pm.response.json();",
+              "pm.expect(data).to.have.property('job_id');",
+              "pm.collectionVariables.set('last_job_id', data.job_id);"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "6) Generate simple (You are an assistant...)",
@@ -178,7 +248,73 @@
         },
         "description": "Generate simple request for prompt set #6 (You are an assistant...)."
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Accepted async job', function () { pm.response.to.have.status(202); });",
+              "var data = pm.response.json();",
+              "pm.expect(data).to.have.property('job_id');",
+              "pm.collectionVariables.set('last_job_id', data.job_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7) Get job status/result (last_job_id)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/jobs/{{last_job_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "jobs",
+            "{{last_job_id}}"
+          ]
+        },
+        "description": "Poll this endpoint after enqueueing /generate/chat or /generate/simple. Returns done+result, error, or queued/running."
+      }
+    },
+    {
+      "name": "8) Offline blocking chat (returns result in same response)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"chat\",\n  \"model_name\": \"{{model_name}}\",\n  \"prompts\": [\n    {\n      \"messages\": [\n        {\n          \"role\": \"user\",\n          \"content\": \"Say hello in one sentence.\"\n        }\n      ],\n      \"metadata\": {\n        \"id\": \"offline-chat-1\"\n      }\n    }\n  ],\n  \"sampling\": {\n    \"temperature\": 0.2,\n    \"top_p\": 0.9,\n    \"max_tokens\": 64\n  },\n  \"include_metadata\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/offline",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "generate",
+            "offline"
+          ]
+        },
+        "description": "No x-ui-request header => server blocks until done/error and returns final payload."
+      }
     }
   ],
   "variable": [
@@ -189,6 +325,10 @@
     {
       "key": "model_name",
       "value": "meta-llama/Llama-3.2-3B-Instruct"
+    },
+    {
+      "key": "last_job_id",
+      "value": ""
     }
   ]
 }
