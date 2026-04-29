@@ -104,18 +104,19 @@ def process(generation_json, config):
         ],
         code: String.raw`import re
 
-ITEM_START_RE = re.compile(r"(?m)^\\s*(?:[*]{0,2}\\s*)?([1-5])[\\.)]\\s+")
+ITEM_START_RE = re.compile(r"(?m)^\s*(?:[*]{0,2}\s*)?([1-5])[\.)]\s+")
+FIRST_ITEM_FALLBACK_RE = re.compile(r"(?m)^\s*(?![*]{0,2}\s*[1-5][\.)]\s+)([^\n]+)")
 AI_PATTERNS = [
-    r"\\bAI\\b",
-    r"\\bA\\.I\\.\\b",
-    r"\\bartificial\\s+intelligence\\b",
-    r"\\bML\\b",
-    r"\\bM\\.L\\.\\b",
-    r"\\bmachine\\s+learning\\b",
-    r"\\bdeep\\s+learning\\b",
-    r"\\bgenerative\\s+ai\\b",
-    r"\\bllm(?:s)?\\b",
-    r"\\blarge\\s+language\\s+model(?:s)?\\b",
+    r"\bAI\b",
+    r"\bA\.I\.\b",
+    r"\bartificial\s+intelligence\b",
+    r"\bML\b",
+    r"\bM\.L\.\b",
+    r"\bmachine\s+learning\b",
+    r"\bdeep\s+learning\b",
+    r"\bgenerative\s+ai\b",
+    r"\bllm(?:s)?\b",
+    r"\blarge\s+language\s+model(?:s)?\b",
 ]
 AI_RE = re.compile("|".join(f"(?:{p})" for p in AI_PATTERNS), re.IGNORECASE)
 
@@ -134,7 +135,14 @@ def extract_numbered_items_1_to_5(text):
             first_pos[idx] = (m.start(), m.end())
 
     if not all(i in first_pos for i in range(1, 6)):
-        return None
+        if all(i in first_pos for i in range(2, 6)):
+            first_match = FIRST_ITEM_FALLBACK_RE.search(text)
+            if first_match and first_match.start() < first_pos[2][0]:
+                first_pos[1] = (first_match.start(), first_match.start())
+            else:
+                return None
+        else:
+            return None
 
     items = []
     for i in range(1, 6):

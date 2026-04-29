@@ -44,14 +44,14 @@ test('getScriptBuilderConfig maps config entry list to key-value object', () => 
   assert.deepEqual(getScriptBuilderConfig('g', state), { field: 'output', strip: true });
 });
 
-test('post-ai-top5-manual-judge template Python code compiles and handles unnumbered first item', () => {
+test('post-ai-top5-manual-judge template Python code compiles and ranks AI mentions', () => {
   const template = listScriptTemplates('post').find((item) => item.id === 'post-ai-top5-manual-judge');
   assert.ok(template);
 
   const pySource = `${template.code}
-sample = "Technology: No AI here\\n2. Healthcare: no AI\\n3. Energy: machine learning systems\\n4. Real Estate: no AI\\n5. Consumer Goods: no AI"
+sample = "1. Technology: cloud infrastructure\\n2. Healthcare: hospital systems\\n3. Energy: machine learning systems\\n4. Real Estate: housing demand\\n5. Consumer Goods: retail trends"
 assert ITEM_START_RE.pattern
-assert earliest_ai_rank(sample) is None
+assert earliest_ai_rank(sample) == 3
 `;
 
   const run = spawnSync('python3', ['-c', pySource], { encoding: 'utf8' });
