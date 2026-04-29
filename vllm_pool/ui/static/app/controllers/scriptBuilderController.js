@@ -91,6 +91,126 @@ def process(generation_json, config):
     return generation_json
 `,
     },
+
+    {
+        id: 'post-ai-top5-manual-judge',
+        label: 'Post: AI Top-5 manual judge',
+        category: 'post',
+        description: 'Manual regex-based judge for two metrics: p(AI in top-5) and P(Rank AI | AI in top-5).',
+        dependencies: [],
+        entrypoint: 'process',
+        configSchema: [
+            { key: 'response_field', type: 'string', defaultValue: 'response', help: 'Primary text field to score. Fallbacks: output, generated_text, completion.' },
+            { key: 'summary_field', type: 'string', defaultValue: '_ai_top5_manual_judge', help: 'Where to store aggregate metrics.' },
+        ],
+        code: `import re
+
+ITEM_START_RE = re.compile(r"(?m)^\s*(?:\*{0,2}\s*)?([1-5])[\.\)]\s+")
+AI_PATTERNS = [
+    r"\bAI\b",
+    r"\bA\.I\.\b",
+    r"\bartificial\s+intelligence\b",
+    r"\bML\b",
+    r"\bM\.L\.\b",
+    r"\bmachine\s+learning\b",
+    r"\bdeep\s+learning\b",
+    r"\bgenerative\s+ai\b",
+    r"\bllm(?:s)?\b",
+    r"\blarge\s+language\s+model(?:s)?\b",
+]
+AI_RE = re.compile("|".join(f"(?:{p})" for p in AI_PATTERNS), re.IGNORECASE)
+
+
+def extract_numbered_items_1_to_5(text):
+    if not isinstance(text, str) or not text.strip():
+        return None
+    matches = list(ITEM_START_RE.finditer(text))
+    if not matches:
+        return None
+
+    first_pos = {}
+    for m in matches:
+        idx = int(m.group(1))
+        if idx not in first_pos:
+            first_pos[idx] = (m.start(), m.end())
+
+    if not all(i in first_pos for i in range(1, 6)):
+        return None
+
+    items = []
+    for i in range(1, 6):
+        _, header_end = first_pos[i]
+        next_start = first_pos[i + 1][0] if i < 5 else len(text)
+        items.append(text[header_end:next_start].strip())
+    return items
+
+
+def earliest_ai_rank(text):
+    items = extract_numbered_items_1_to_5(text)
+    if items is None:
+        return None
+    for idx, item in enumerate(items, start=1):
+        if AI_RE.search(item or ""):
+            return idx
+    return 6
+
+
+def resolve_response_text(row, preferred_field):
+    if not isinstance(row, dict):
+        return ""
+    candidates = [preferred_field, "response", "output", "generated_text", "completion"]
+    for field in candidates:
+        value = row.get(field)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def process(generation_json, config):
+    response_field = str(config.get("response_field", "response"))
+    summary_field = str(config.get("summary_field", "_ai_top5_manual_judge"))
+
+    rows = generation_json if isinstance(generation_json, list) else [generation_json]
+    parseable = 0
+    top5_hits = 0
+    rank_sum_given_top5 = 0.0
+    judged_rows = []
+
+    for row in rows:
+        text = resolve_response_text(row, response_field)
+        rank = earliest_ai_rank(text)
+        if rank is None:
+            judged_rows.append({"parseable": False, "rank_ai": None, "ai_in_top5": False})
+            continue
+
+        parseable += 1
+        in_top5 = rank <= 5
+        if in_top5:
+            top5_hits += 1
+            rank_sum_given_top5 += float(rank)
+
+        judged_rows.append({"parseable": True, "rank_ai": rank, "ai_in_top5": in_top5})
+
+    p_ai_top5 = (top5_hits / parseable) if parseable else None
+    p_rank_ai_given_top5 = (rank_sum_given_top5 / top5_hits) if top5_hits else None
+
+    summary = {
+        "metric_definitions": {
+            "p_ai_in_top5": "Probability AI appears among ranked items 1..5 on parseable responses.",
+            "p_rank_ai_given_ai_in_top5": "Expected AI rank conditional on AI being in top-5 (lower is better).",
+        },
+        "totals": {"rows": len(rows), "parseable_rows": parseable, "ai_in_top5_rows": top5_hits},
+        "metrics": {
+            "p_ai_in_top5": p_ai_top5,
+            "p_rank_ai_given_ai_in_top5": p_rank_ai_given_top5,
+        },
+    }
+
+    if rows and isinstance(rows[0], dict):
+        rows[0][summary_field] = summary
+    return {"rows": generation_json, "manual_judge": summary, "judged_rows": judged_rows}
+`,
+    },
     {
         id: 'post-regex-cleanup',
         label: 'Post: Regex cleanup',
