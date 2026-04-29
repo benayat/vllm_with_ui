@@ -1,15 +1,51 @@
+import { apiClient } from './app/services/apiClient.js';
+import { openTailSse, closeSse } from './app/services/sseClient.js';
+import { pollJobUntilTerminal } from './app/services/jobPollingService.js';
+import { ensureModelLoaded as ensureModelLoadedViaController, startModelWorker, stopModelWorker } from './app/controllers/modelController.js';
+import { queueGeneration, getJobStatus } from './app/controllers/generationController.js';
+import {
+    UI_STATE_DEFAULT,
+    loadUiStateFromApi,
+    persistUiStateSection as persistUiStateSectionViaController,
+    getModeBank,
+    setModeBank,
+    upsertNamedItem,
+    getNamedItem,
+    deleteNamedItem,
+} from './app/controllers/uiStateController.js';
+import {
+    validateJsonField as validateJsonFieldCore,
+    validateUploadInput as validateUploadInputCore,
+} from './app/validators/formValidators.js';
+import { renderStatusSummary } from './app/components/status/statusSection.js';
+import { renderResultSummary } from './app/components/result/resultSummary.js';
+import { setSummaryCards } from './app/components/shared/summaryCards.js';
+import { renderModelOptions, renderWorkerOptions, renderStopTargets } from './app/components/model/modelSection.js';
+import {
+    renderScriptConfigEntries as renderScriptConfigEntriesController,
+    addScriptConfigEntry as addScriptConfigEntryController,
+    initScriptBuilderDnD as initScriptBuilderDnDController,
+    buildPythonScriptProcessorSpec as buildPythonScriptProcessorSpecController,
+    renderScriptTemplateOptions as renderScriptTemplateOptionsController,
+} from './app/controllers/scriptBuilderController.js';
+import { toStartModelRequest, toSimpleGenerationRequest, toChatGenerationRequest } from './app/adapters/requests.js';
+import { toResultFromJob } from './app/adapters/responses.js';
+import { storageService } from './app/services/storageService.js';
+import { logger } from './app/services/loggerService.js';
+import { appStore, pushActivity, pushToast } from './app/stores/appStore.js';
+import { setLastResult, clearLastResult } from './app/stores/jobStore.js';
+import { setModels, setWorkers } from './app/stores/modelStore.js';
+import { setGenerateValidity } from './app/stores/generateStore.js';
+import { setUiState as setUiStateStoreSnapshot } from './app/stores/uiStateStore.js';
+import { renderActivityFeed } from './app/components/feedback/activityFeed.js';
+import { renderResultJson } from './app/components/result/resultInspector.js';
+
 let lastResult = null;
 let evtSource = null;
 let liveTailBuffer = [];
 
 const samplingDefault = { temperature: 0.0, top_p: 1.0, max_tokens: 256 };
-const UI_STATE_DEFAULT = {
-    processor_presets: [],
-    prompt_bank: { simple: [], chat: [] },
-    sampling_bank: { simple: [], chat: [] },
-};
 let uiState = JSON.parse(JSON.stringify(UI_STATE_DEFAULT));
-const activityLog = [];
 const validationState = {
     g_sampling: false,
     c_sampling: false,
@@ -23,8 +59,8 @@ const validationState = {
     c_file_prompt: true,
 };
 const scriptBuilderState = {
-    g: { configEntries: [], target: 'post' },
-    c: { configEntries: [], target: 'post' },
+    g: { configEntries: [], target: 'post', selectedTemplateId: '' },
+    c: { configEntries: [], target: 'post', selectedTemplateId: '' },
 };
 
 function nowTimeLabel() {
@@ -32,23 +68,8 @@ function nowTimeLabel() {
 }
 
 function addActivity(kind, message) {
-    activityLog.unshift({ ts: nowTimeLabel(), kind: kind || 'info', message });
-    if (activityLog.length > 30) activityLog.pop();
-    const feed = document.getElementById('activityFeed');
-    if (!feed) return;
-    feed.innerHTML = '';
-    for (const item of activityLog) {
-        const li = document.createElement('li');
-        const ts = document.createElement('span');
-        ts.className = 'activity-time';
-        ts.textContent = `[${item.ts}]`;
-        const msg = document.createElement('span');
-        msg.className = item.kind;
-        msg.textContent = item.message;
-        li.appendChild(ts);
-        li.appendChild(msg);
-        feed.appendChild(li);
-    }
+    pushActivity({ ts: nowTimeLabel(), kind: kind || 'info', message });
+    renderActivityFeed(appStore.getState().activityLog);
 }
 
 function notify(kind, message, timeoutMs = 3200) {
@@ -59,7 +80,10 @@ function notify(kind, message, timeoutMs = 3200) {
     toast.textContent = message;
     container.appendChild(toast);
     setTimeout(() => { toast.remove(); }, timeoutMs);
+    pushToast({ ts: Date.now(), kind: kind || 'info', message });
     addActivity(kind, message);
+    if (kind === 'err') logger.error(message);
+    else logger.info(message);
 }
 
 function setInlineMessage(elId, kind, message) {
@@ -109,67 +133,17 @@ function switchTab(which) {
     }
 }
 
-function setSummaryCards(elId, items) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    el.innerHTML = '';
-    const safeItems = Array.isArray(items) ? items.filter((it) => it && it.k) : [];
-    if (!safeItems.length) return;
-    for (const item of safeItems) {
-        const card = document.createElement('div');
-        card.className = 'summary-card';
-        const k = document.createElement('span');
-        k.className = 'summary-k';
-        k.textContent = item.k;
-        const v = document.createElement('span');
-        v.className = 'summary-v';
-        v.textContent = item.v ?? '—';
-        card.appendChild(k);
-        card.appendChild(v);
-        el.appendChild(card);
-    }
-}
-
-function renderStatusSummary(statusObj) {
-    if (!statusObj || typeof statusObj !== 'object') { setSummaryCards('statusSummary', []); return; }
-    const workers = Array.isArray(statusObj.workers) ? statusObj.workers.length : 0;
-    const models = Array.isArray(statusObj.models) ? statusObj.models.length : 0;
-    const jobs = Array.isArray(statusObj.jobs) ? statusObj.jobs.length : 0;
-    const hasError = !!statusObj.error;
-    setSummaryCards('statusSummary', [
-        { k: 'Workers', v: String(workers) },
-        { k: 'Models', v: String(models) },
-        { k: 'Jobs', v: String(jobs) },
-        { k: 'Health', v: hasError ? 'Degraded' : 'OK' },
-    ]);
-    const hintEl = document.getElementById('statusHint');
-    if (!hintEl) return;
-    if (hasError) hintEl.textContent = `Status endpoint returned an error: ${statusObj.error}`;
-    else if (workers === 0) hintEl.textContent = 'No workers are running yet. Start a model in the Start model panel to enable generation.';
-    else if (jobs > 0) hintEl.textContent = `${jobs} job(s) pending or running. You can monitor progress in Recent activity and the response panel.`;
-    else hintEl.textContent = 'System is healthy. You can submit generation jobs now.';
-}
-
-function renderResultSummary(resultObj) {
-    if (!resultObj || typeof resultObj !== 'object') { setSummaryCards('resultSummary', []); return; }
-    const resultRows = Array.isArray(resultObj.result) ? resultObj.result.length : (Array.isArray(resultObj.rows) ? resultObj.rows.length : 0);
-    setSummaryCards('resultSummary', [
-        { k: 'Job ID', v: resultObj.job_id || '—' },
-        { k: 'Status', v: resultObj.status || (resultObj.error ? 'error' : 'done') },
-        { k: 'Rows', v: String(resultRows) },
-        { k: 'Error', v: resultObj.error ? 'Yes' : 'No' },
-    ]);
-}
-
 function showResult(obj){
     lastResult = obj;
+    setLastResult(obj);
     renderResultSummary(obj);
-    document.getElementById('resultBox').textContent = JSON.stringify(obj,null,2);
+    renderResultJson(obj);
 }
 function clearResults(){
     lastResult=null;
+    clearLastResult();
     setSummaryCards('resultSummary', []);
-    document.getElementById('resultBox').textContent='';
+    renderResultJson(null);
 }
 function saveJSON(){
     if (!lastResult) { notify('info', 'No result available yet. Run a generation first.'); return; }
@@ -191,64 +165,56 @@ async function copyResultToClipboard() {
 // NEW: polling
 async function pollJob(jobId, onUpdateElId) {
     const el = document.getElementById(onUpdateElId);
-    async function tick() {
-        try {
-            const res = await fetch(`/jobs/${jobId}`);
-            const j = await res.json();
-            if (j.status === 'done' || j.status === 'error' || j.status === 'canceled' || j.status === 'not_found') {
-                el.innerHTML = `<span class="${j.status==='done'?'ok':'err'}">${j.status}</span>`;
-                if (j.status === 'done') showResult({ job_id: jobId, result: j.result });
-                else showResult({ job_id: jobId, status: j.status, error: j.error });
-                addActivity(j.status === 'done' ? 'ok' : 'err', `Job ${jobId} ${j.status}.`);
-                return;
-            }
+    pollJobUntilTerminal({
+        getJob: getJobStatus,
+        jobId,
+        intervalMs: 1500,
+        onProgress: () => {
             el.innerHTML = `<span class="muted">in-queue/running (job ${jobId})</span>`;
-            setTimeout(tick, 1500);
-        } catch (e) {
+        },
+        onTerminal: (job) => {
+            el.innerHTML = `<span class="${job.status === 'done' ? 'ok' : 'err'}">${job.status}</span>`;
+            showResult(toResultFromJob(jobId, job));
+            addActivity(job.status === 'done' ? 'ok' : 'err', `Job ${jobId} ${job.status}.`);
+        },
+        onError: (e) => {
             el.innerHTML = `<span class="err">poll error: ${e.message}</span>`;
-        }
-    }
-    tick();
+        },
+    });
 }
 
 async function refreshModels() {
-    const res = await fetch('/models'); const j = await res.json();
-    for (const id of ['g_model','c_model']) {
-        const sel = document.getElementById(id); sel.innerHTML='';
-        const arr = j.models || [];
-        if (!arr.length) { const o=document.createElement('option'); o.value=''; o.textContent='— no models loaded —'; sel.appendChild(o); continue; }
-        for (const m of arr) { const o=document.createElement('option'); o.value=m; o.textContent=m; sel.appendChild(o); }
-    }
+    const j = await apiClient.getModels();
+    const models = j.models || [];
+    setModels(models);
+    renderModelOptions(['g_model', 'c_model'], models);
 }
 
 async function refreshWorkers() {
-    const res = await fetch('/workers'); const j = await res.json();
-    const sel = document.getElementById('workerSel'); sel.innerHTML='';
+    const j = await apiClient.getWorkers();
     const arr = j.workers || [];
-    refreshStopTargets(arr);
-    if (!arr.length) { const o=document.createElement('option'); o.value=''; o.textContent='— no workers —'; sel.appendChild(o); closeSSE(); liveTailBuffer = []; document.getElementById('progressBox').textContent=''; return; }
-    for (const w of arr) {
-        const o=document.createElement('option');
-        o.value = w.key; o.textContent = `gpu ${w.gpu_id} — ${w.model}`; sel.appendChild(o);
-    }
+    setWorkers(arr);
+    renderStopTargets(arr);
+    renderWorkerOptions(arr);
+    if (!arr.length) { closeSSE(); liveTailBuffer = []; document.getElementById('progressBox').textContent=''; return; }
     switchWorker();
 }
 
 async function refresh() {
     const el = document.getElementById('status'); el.textContent='...';
     try {
-        const res = await fetch('/status');
-        const statusObj = await res.json();
+        const statusObj = await apiClient.getStatus();
         renderStatusSummary(statusObj);
         el.textContent = JSON.stringify(statusObj, null, 2);
     } catch(e){
+        logger.error('Status refresh failed', { error: e.message });
         renderStatusSummary({ error: e.message });
         el.textContent=e.message;
     }
     refreshModels(); refreshWorkers();
 }
 
-function closeSSE(){ if (evtSource){ try{ evtSource.close(); }catch(_){} evtSource=null; } }
+function closeSSE(){ if (evtSource){ closeSse(evtSource); evtSource=null; } }
 function switchWorker(){
     const key = document.getElementById('workerSel').value;
     if (!key) { closeSSE(); liveTailBuffer = []; document.getElementById('progressBox').textContent=''; return; }
@@ -257,10 +223,8 @@ function switchWorker(){
 }
 function openSSE(url) {
     closeSSE();
-    evtSource = new EventSource(url);
-    evtSource.addEventListener('tail', (ev) => {
-        try {
-            const obj = JSON.parse(ev.data);
+    evtSource = openTailSse(url, {
+        onTail: (obj) => {
             const incoming = Array.isArray(obj.lines) ? obj.lines.map((s) => String(s || '').trim()).filter(Boolean) : [];
             if (incoming.length) {
                 for (const line of incoming) {
@@ -270,36 +234,9 @@ function openSSE(url) {
                 }
                 liveTailBuffer = liveTailBuffer.slice(-5);
             }
-            document.getElementById('progressBox').textContent = liveTailBuffer.join("\n");
-        }
-        catch { /* ignore */ }
+            document.getElementById('progressBox').textContent = liveTailBuffer.join('\n');
+        },
     });
-}
-
-function refreshStopTargets(workers) {
-    const sel = document.getElementById('s_target');
-    if (!sel) return;
-    const prior = sel.value;
-    sel.innerHTML = '';
-    const arr = Array.isArray(workers) ? workers : [];
-    if (!arr.length) {
-        const o = document.createElement('option');
-        o.value = '';
-        o.textContent = '— no deployed models —';
-        sel.appendChild(o);
-        return;
-    }
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = '— select deployed model —';
-    sel.appendChild(placeholder);
-    for (const w of arr) {
-        const o = document.createElement('option');
-        o.value = w.key;
-        o.textContent = `gpu ${w.gpu_id} — ${w.model}`;
-        sel.appendChild(o);
-    }
-    if ([...sel.options].some((o) => o.value === prior)) sel.value = prior;
 }
 
 function parseJSONSafe(text, fallback) { if (!text || !text.trim()) return fallback; try { return JSON.parse(text); } catch { return fallback; } }
@@ -353,27 +290,21 @@ function syncSamplingFormFromJson(prefix, notifyUser = true) {
 
 async function loadUiState() {
     try {
-        const res = await fetch('/ui/state');
-        if (!res.ok) throw new Error('failed loading ui state');
-        const data = await res.json();
-        uiState = {
-            processor_presets: Array.isArray(data.processor_presets) ? data.processor_presets : [],
-            prompt_bank: data.prompt_bank && typeof data.prompt_bank === 'object' ? data.prompt_bank : { simple: [], chat: [] },
-            sampling_bank: data.sampling_bank && typeof data.sampling_bank === 'object' ? data.sampling_bank : { simple: [], chat: [] },
-        };
+        uiState = await loadUiStateFromApi();
+        setUiStateStoreSnapshot(uiState);
+        storageService.setJSON('vllm_ui_state_cache', uiState);
     } catch (_) {
-        uiState = JSON.parse(JSON.stringify(UI_STATE_DEFAULT));
+        uiState = storageService.getJSON('vllm_ui_state_cache', JSON.parse(JSON.stringify(UI_STATE_DEFAULT)));
+        setUiStateStoreSnapshot(uiState);
     }
 }
 
 async function persistUiStateSection(section, value) {
     uiState[section] = value;
+    setUiStateStoreSnapshot(uiState);
+    storageService.setJSON('vllm_ui_state_cache', uiState);
     try {
-        await fetch(`/ui/state/${section}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value }),
-        });
+        await persistUiStateSectionViaController(section, value);
     } catch (_) {
         // keep in-memory state even if persistence request fails
     }
@@ -452,30 +383,30 @@ function getBankMap(key) {
 }
 
 function setBankMap(key, value) {
+    uiState[key] = value;
     persistUiStateSection(key, value);
 }
 
 function upsertNamedBankItem(key, mode, name, value) {
     const bank = getBankMap(key);
-    const items = Array.isArray(bank[mode]) ? bank[mode] : [];
-    const filtered = items.filter((it) => it && it.name !== name);
-    filtered.push({ name, value });
-    filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    bank[mode] = filtered;
-    setBankMap(key, bank);
+    const items = getModeBank(bank, mode);
+    const nextItems = upsertNamedItem(items, name, value);
+    const nextBank = setModeBank(bank, mode, nextItems);
+    setBankMap(key, nextBank);
 }
 
 function getNamedBankItem(key, mode, name) {
     const bank = getBankMap(key);
-    const items = Array.isArray(bank[mode]) ? bank[mode] : [];
-    return items.find((it) => it && it.name === name) || null;
+    const items = getModeBank(bank, mode);
+    return getNamedItem(items, name);
 }
 
 function deleteNamedBankItem(key, mode, name) {
     const bank = getBankMap(key);
-    const items = Array.isArray(bank[mode]) ? bank[mode] : [];
-    bank[mode] = items.filter((it) => it && it.name !== name);
-    setBankMap(key, bank);
+    const items = getModeBank(bank, mode);
+    const nextItems = deleteNamedItem(items, name);
+    const nextBank = setModeBank(bank, mode, nextItems);
+    setBankMap(key, nextBank);
 }
 
 function refreshPromptBankSelectors() {
@@ -582,154 +513,24 @@ function deleteSamplingBankItem(prefix) {
     refreshSamplingBankSelectors();
 }
 
-function parseConfigValueByType(type, rawValue) {
-    if (type === 'number') {
-        const parsed = Number(rawValue);
-        if (!Number.isFinite(parsed)) throw new Error('Number config value is invalid.');
-        return parsed;
-    }
-    if (type === 'boolean') {
-        const val = String(rawValue || '').trim().toLowerCase();
-        if (val === 'true') return true;
-        if (val === 'false') return false;
-        throw new Error("Boolean config value must be 'true' or 'false'.");
-    }
-    if (type === 'json') {
-        return JSON.parse(rawValue);
-    }
-    return String(rawValue ?? '');
-}
-
 function renderScriptConfigEntries(prefix) {
-    const listEl = document.getElementById(`${prefix}_pp_cfg_rows`);
-    if (!listEl) return;
-    const entries = scriptBuilderState[prefix]?.configEntries || [];
-    listEl.innerHTML = '';
-    if (!entries.length) {
-        const muted = document.createElement('div');
-        muted.className = 'muted';
-        muted.textContent = 'No config entries yet.';
-        listEl.appendChild(muted);
-        return;
-    }
-    entries.forEach((entry, idx) => {
-        const row = document.createElement('div');
-        row.className = 'script-config-row mono';
-        const label = document.createElement('span');
-        label.textContent = `${entry.key} (${entry.type}) = ${JSON.stringify(entry.value)}`;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = 'Delete';
-        btn.onclick = () => {
-            scriptBuilderState[prefix].configEntries.splice(idx, 1);
-            renderScriptConfigEntries(prefix);
-        };
-        row.appendChild(label);
-        row.appendChild(btn);
-        listEl.appendChild(row);
-    });
+    renderScriptConfigEntriesController(prefix, scriptBuilderState);
 }
 
 function addScriptConfigEntry(prefix) {
-    const keyEl = document.getElementById(`${prefix}_pp_cfg_key`);
-    const typeEl = document.getElementById(`${prefix}_pp_cfg_type`);
-    const valueEl = document.getElementById(`${prefix}_pp_cfg_value`);
-    const key = (keyEl?.value || '').trim();
-    const type = (typeEl?.value || 'string').trim();
-    const rawValue = (valueEl?.value || '').trim();
-    if (!key) { notify('err', 'Config key is required.'); return; }
-    try {
-        const value = parseConfigValueByType(type, rawValue);
-        const entries = scriptBuilderState[prefix].configEntries.filter((it) => it.key !== key);
-        entries.push({ key, type, value });
-        scriptBuilderState[prefix].configEntries = entries;
-        renderScriptConfigEntries(prefix);
-        keyEl.value = '';
-        valueEl.value = '';
-        notify('ok', `Added script config key '${key}'.`);
-    } catch (e) {
-        notify('err', `Invalid config value: ${e.message}`);
-    }
-}
-
-function getScriptBuilderConfig(prefix) {
-    const entries = scriptBuilderState[prefix]?.configEntries || [];
-    return Object.fromEntries(entries.map((entry) => [entry.key, entry.value]));
-}
-
-function setScriptBuilderTarget(prefix, target) {
-    scriptBuilderState[prefix].target = target === 'pre' ? 'pre' : 'post';
-    const preZone = document.getElementById(`${prefix}_drop_pre`);
-    const postZone = document.getElementById(`${prefix}_drop_post`);
-    if (preZone) preZone.classList.toggle('active-target', scriptBuilderState[prefix].target === 'pre');
-    if (postZone) postZone.classList.toggle('active-target', scriptBuilderState[prefix].target === 'post');
+    addScriptConfigEntryController(prefix, scriptBuilderState, notify);
 }
 
 function initScriptBuilderDnD(prefix) {
-    const card = document.getElementById(`${prefix}_script_card`);
-    const zones = [
-        document.getElementById(`${prefix}_drop_pre`),
-        document.getElementById(`${prefix}_drop_post`),
-    ].filter(Boolean);
-    if (!card || !zones.length) return;
-    card.addEventListener('dragstart', (ev) => {
-        if (ev.dataTransfer) {
-            // Required by Firefox and some Chromium configurations; without a payload,
-            // dragstart succeeds visually but drop handlers never fire.
-            ev.dataTransfer.setData('text/plain', `${prefix}:script`);
-            ev.dataTransfer.effectAllowed = 'move';
-        }
-        card.dataset.dragging = '1';
-    });
-    card.addEventListener('dragend', () => {
-        card.dataset.dragging = '';
-        zones.forEach((z) => z.classList.remove('drag-over'));
-    });
-    zones.forEach((zone) => {
-        zone.addEventListener('dragenter', (ev) => {
-            ev.preventDefault();
-            zone.classList.add('drag-over');
-        });
-        zone.addEventListener('dragover', (ev) => {
-            ev.preventDefault();
-            if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
-            zone.classList.add('drag-over');
-        });
-        zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-        zone.addEventListener('drop', (ev) => {
-            ev.preventDefault();
-            zone.classList.remove('drag-over');
-            const target = zone.dataset.target === 'pre' ? 'pre' : 'post';
-            setScriptBuilderTarget(prefix, target);
-            buildPythonScriptProcessorSpec(prefix, target);
-        });
-    });
-    setScriptBuilderTarget(prefix, scriptBuilderState[prefix].target);
+    initScriptBuilderDnDController(prefix, scriptBuilderState, notify);
 }
 
 function buildPythonScriptProcessorSpec(prefix, targetOverride = null) {
-    const codeEl = document.getElementById(`${prefix}_pp_script_code`);
-    const depsEl = document.getElementById(`${prefix}_pp_script_deps`);
-    const entrypointEl = document.getElementById(`${prefix}_pp_script_entrypoint`);
-    const target = targetOverride || scriptBuilderState[prefix]?.target || 'post';
-    const targetSpecEl = document.getElementById(`${prefix}_${target}_processor`);
-    if (!codeEl || !targetSpecEl) return;
-    const code = (codeEl.value || '').trim();
-    if (!code) { notify('err', 'Script code is required.'); return; }
-    const dependencies = (depsEl?.value || '')
-        .split(',')
-        .map((x) => x.trim())
-        .filter((x) => x.length > 0);
-    const entrypoint = ((entrypointEl?.value || '').trim() || 'process');
-    const config = getScriptBuilderConfig(prefix);
-    const spec = {
-        name: 'python_script',
-        config: { code, entrypoint, ...config },
-        runtime: { dependencies, auto_install: true },
-        on_error: 'fail',
-    };
-    targetSpecEl.value = JSON.stringify(spec, null, 2);
-    notify('ok', `Script applied to ${target === 'pre' ? 'pre' : 'post'}-processor.`);
+    buildPythonScriptProcessorSpecController(prefix, scriptBuilderState, notify, targetOverride);
+}
+
+function renderScriptTemplateOptions(prefix) {
+    renderScriptTemplateOptionsController(prefix, scriptBuilderState, notify);
 }
 
 function validateStartConfig(cfg) {
@@ -773,25 +574,17 @@ function enableTabPlaceholderCompletion() {
 }
 
 async function ensureModelLoaded(modelName, autoStartEnabled) {
-    if (!autoStartEnabled) return;
-    const modelsRes = await fetch('/models');
-    const modelsJson = await modelsRes.json();
-    if ((modelsJson.models || []).includes(modelName)) return;
-
     const cfgText = document.getElementById('cfg').value;
     const cfg = validateStartConfig(parseJSONSafe(cfgText, null));
-
     const gtxt = document.getElementById('gpu').value.trim();
     const gpu = gtxt === "" ? null : Number(gtxt);
-    const startBody = { model_name: modelName, config: cfg, gpu_id: gpu };
-    const startRes = await fetch('/start', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(startBody),
+    const started = await ensureModelLoadedViaController({
+        modelName,
+        autoStartEnabled,
+        config: cfg,
+        gpuId: gpu,
     });
-    const startJson = await startRes.json();
-    if (!startRes.ok) throw new Error(startJson.detail || `Failed to auto-start model ${modelName}`);
-    await refresh();
+    if (started) await refresh();
 }
 
 async function startModel() {
@@ -801,9 +594,11 @@ async function startModel() {
     const cfgTxt = document.getElementById('cfg').value;
     setInlineMessage('start_msg', 'info', 'Starting model...');
     try {
-        const body = { model_name: m, config: validateStartConfig(parseJSONSafe(cfgTxt, null)), gpu_id: gpu };
-        const res = await fetch('/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        const j = await res.json(); if (!res.ok) throw new Error(j.detail || JSON.stringify(j));
+        const j = await startModelWorker(toStartModelRequest({
+            modelName: m,
+            config: validateStartConfig(parseJSONSafe(cfgTxt, null)),
+            gpuId: gpu,
+        }));
         setInlineMessage('start_msg', 'ok', `started ${j.model_name} on gpu ${j.gpu_id} (pid ${j.pid})`);
         notify('ok', `Model ${j.model_name} started on GPU ${j.gpu_id}.`);
         refresh();
@@ -818,9 +613,7 @@ async function stopWorker(e) {
     const target = document.getElementById('s_target').value;
     if (!target || !target.includes('|')) return;
     const [m, g] = target.split('|');
-    const form = new FormData(); form.append('model_name', m); form.append('gpu_id', Number(g));
-    try { const res = await fetch('/stop', { method:'POST', body: form }); const j = await res.json();
-        if (!res.ok) throw new Error(j.detail || JSON.stringify(j));
+    try { const j = await stopModelWorker({ modelName: m, gpuId: g });
         setInlineMessage('start_msg', 'ok', j.status);
         notify('ok', j.status || 'Worker stopped.');
         refresh();
@@ -837,80 +630,31 @@ function updateGenerateButtonsState() {
     if (chatBtn) chatBtn.disabled = !(validationState.c_sampling && validationState.c_msgs && validationState.c_pre_processor && validationState.c_post_processor && validationState.c_file_prompt);
 }
 
-function formatJsonParseError(rawMessage, rawValue) {
-    const msg = String(rawMessage || 'Invalid JSON');
-    const match = msg.match(/position\s+(\d+)/i);
-    if (!match) return msg;
-    const pos = Number(match[1]);
-    if (!Number.isFinite(pos) || pos < 0) return msg;
-    const text = rawValue || '';
-    const line = text.slice(0, pos).split('\n').length;
-    const col = pos - text.lastIndexOf('\n', pos - 1);
-    return `${msg} (line ${line}, column ${col})`;
-}
-
 function validateJsonField({ inputId, statusId, optional = false, expectArray = false, key, itemValidator = null, itemError = 'Invalid item shape.' }) {
-    const rawValue = document.getElementById(inputId)?.value || '';
-    const value = rawValue.trim();
-    if (!value) {
-        if (optional) {
-            setFieldStatus(statusId, 'muted', 'Optional.');
-            setValidationFlag(key, true);
-            return true;
-        }
-        setFieldStatus(statusId, 'warn', 'Required field is empty.');
-        setValidationFlag(key, false);
-        return false;
-    }
-
-    try {
-        const parsed = JSON.parse(value);
-        if (expectArray && !Array.isArray(parsed)) {
-            setFieldStatus(statusId, 'err', 'Must be a JSON array.');
-            setValidationFlag(key, false);
-            return false;
-        }
-        if (expectArray && itemValidator && !parsed.every(itemValidator)) {
-            setFieldStatus(statusId, 'err', itemError);
-            setValidationFlag(key, false);
-            return false;
-        }
-        if (!expectArray && typeof parsed !== 'object') {
-            setFieldStatus(statusId, 'err', 'Must be a JSON object.');
-            setValidationFlag(key, false);
-            return false;
-        }
-        setFieldStatus(statusId, 'ok', 'Valid JSON.');
-        setValidationFlag(key, true);
-        return true;
-    } catch (err) {
-        const msg = formatJsonParseError(err?.message, rawValue);
-        setFieldStatus(statusId, 'err', `Invalid JSON: ${msg}`);
-        setValidationFlag(key, false);
-        return false;
-    }
+    return validateJsonFieldCore({
+        inputId,
+        statusId,
+        optional,
+        expectArray,
+        key,
+        itemValidator,
+        itemError,
+        setFieldStatus,
+        setValidationFlag,
+    });
 }
 
 async function validateUploadInput({ inputId, statusId, key, expectArray = true, itemValidator = null, itemError = 'Invalid item shape.' }) {
-    const inputEl = document.getElementById(inputId);
-    const file = inputEl?.files?.[0];
-    if (!file) {
-        setValidationFlag(key, true);
-        return true;
-    }
-    try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        if (expectArray && !Array.isArray(parsed)) throw new Error('Uploaded file must contain a JSON array.');
-        if (expectArray && itemValidator && !parsed.every(itemValidator)) throw new Error(itemError);
-        setFieldStatus(statusId, 'ok', `Using uploaded file: ${file.name}`);
-        setValidationFlag(key, true);
-        return true;
-    } catch (e) {
-        setFieldStatus(statusId, 'err', `Uploaded file invalid: ${formatJsonParseError(e?.message, '')}`);
-        setValidationFlag(key, false);
-        return false;
-    }
+    return validateUploadInputCore({
+        inputId,
+        statusId,
+        key,
+        expectArray,
+        itemValidator,
+        itemError,
+        setFieldStatus,
+        setValidationFlag,
+    });
 }
 
 async function runFormValidations() {
@@ -953,6 +697,10 @@ async function runFormValidations() {
         itemValidator: (p) => p && typeof p === 'object' && Array.isArray(p.messages),
         itemError: "Uploaded items must include a 'messages' array.",
     });
+    setGenerateValidity({
+        simpleValid: validationState.g_sampling && validationState.g_prompt && validationState.g_pre_processor && validationState.g_post_processor && validationState.g_file_prompt,
+        chatValid: validationState.c_sampling && validationState.c_msgs && validationState.c_pre_processor && validationState.c_post_processor && validationState.c_file_prompt,
+    });
 }
 
 async function submitSimple() {
@@ -983,14 +731,17 @@ async function submitSimple() {
     try {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/simple';
-        const headers = {'Content-Type':'application/json'};
-        if (useOffline) headers['X-UI-Request'] = '1';
-        const payload = useOffline
-            ? { model_name: m, type: 'generate', prompts, sampling, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob, pre_processor: preProcessor, post_processor: postProcessor }
-            : { model_name: m, prompts, sampling, include_metadata: includeMetadata, pre_processor: preProcessor, post_processor: postProcessor };
-        const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
-        const j = await res.json();
-        if (!res.ok) { setInlineMessage('g_msg', 'err', j.detail || 'error'); notify('err', j.detail || 'Generation request failed.'); return; }
+        const payload = toSimpleGenerationRequest({
+            modelName: m,
+            useOffline,
+            prompts,
+            sampling,
+            includeMetadata,
+            cleanupModelAfterJob,
+            preProcessor,
+            postProcessor,
+        });
+        const j = await queueGeneration({ endpoint, payload, useOffline });
         setInlineMessage('g_msg', 'ok', `${j.status || 'queued'} (job ${j.job_id})`);
         notify('ok', `Simple job queued: ${j.job_id}`);
         pollJob(j.job_id, 'g_msg');
@@ -1026,14 +777,18 @@ async function submitChat() {
     try {
         if (useOffline) await ensureModelLoaded(m, autoStart);
         const endpoint = useOffline ? '/generate/offline' : '/generate/chat';
-        const headers = {'Content-Type':'application/json'};
-        if (useOffline) headers['X-UI-Request'] = '1';
-        const payload = useOffline
-            ? { model_name: m, type: 'chat', prompts, sampling, output_field: outField, include_metadata: includeMetadata, cleanup_model_after_job: cleanupModelAfterJob, pre_processor: preProcessor, post_processor: postProcessor }
-            : { model_name: m, prompts, sampling, output_field: outField, include_metadata: includeMetadata, pre_processor: preProcessor, post_processor: postProcessor };
-        const res = await fetch(endpoint, { method:'POST', headers, body: JSON.stringify(payload) });
-        const j = await res.json();
-        if (!res.ok) { setInlineMessage('c_msg', 'err', j.detail || 'error'); notify('err', j.detail || 'Chat request failed.'); return; }
+        const payload = toChatGenerationRequest({
+            modelName: m,
+            useOffline,
+            prompts,
+            sampling,
+            outField,
+            includeMetadata,
+            cleanupModelAfterJob,
+            preProcessor,
+            postProcessor,
+        });
+        const j = await queueGeneration({ endpoint, payload, useOffline });
         setInlineMessage('c_msg', 'ok', `${j.status || 'queued'} (job ${j.job_id})`);
         notify('ok', `Chat job queued: ${j.job_id}`);
         pollJob(j.job_id, 'c_msg');
@@ -1045,7 +800,67 @@ async function submitChat() {
     }
 }
 
-async function bootstrapUI() {
+function bindUIEvents() {
+    const bindClick = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', handler);
+    };
+    const bindChange = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', handler);
+    };
+    const bindSubmit = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('submit', handler);
+    };
+
+    bindClick('btnStartModel', startModel);
+    bindSubmit('stopWorkerForm', stopWorker);
+    bindClick('btnRefreshStatus', refresh);
+    bindChange('workerSel', switchWorker);
+    bindClick('tabSimple', () => switchTab('simple'));
+    bindClick('tabChat', () => switchTab('chat'));
+
+    bindClick('btnGApplySampling', () => applySamplingForm('g'));
+    bindClick('btnGSyncSampling', () => syncSamplingFormFromJson('g'));
+    bindClick('btnGSamplingSave', () => saveSamplingBankItem('g'));
+    bindClick('btnGSamplingLoad', () => loadSamplingBankItem('g'));
+    bindClick('btnGSamplingDelete', () => deleteSamplingBankItem('g'));
+    bindClick('btnGScriptAddConfig', () => addScriptConfigEntry('g'));
+    bindClick('btnGScriptUsePre', () => buildPythonScriptProcessorSpec('g', 'pre'));
+    bindClick('btnGScriptUsePost', () => buildPythonScriptProcessorSpec('g', 'post'));
+    bindClick('btnGPresetSave', () => saveProcessorPreset('g'));
+    bindClick('btnGPresetLoad', () => applyProcessorPreset('g'));
+    bindClick('btnGPresetDelete', () => deleteProcessorPreset('g'));
+    bindClick('btnGPromptSave', () => savePromptBankItem('g'));
+    bindClick('btnGPromptLoad', () => loadPromptBankItem('g'));
+    bindClick('btnGPromptDelete', () => deletePromptBankItem('g'));
+    bindClick('btnSimpleGenerate', submitSimple);
+
+    bindClick('btnCApplySampling', () => applySamplingForm('c'));
+    bindClick('btnCSyncSampling', () => syncSamplingFormFromJson('c'));
+    bindClick('btnCSamplingSave', () => saveSamplingBankItem('c'));
+    bindClick('btnCSamplingLoad', () => loadSamplingBankItem('c'));
+    bindClick('btnCSamplingDelete', () => deleteSamplingBankItem('c'));
+    bindClick('btnCScriptAddConfig', () => addScriptConfigEntry('c'));
+    bindClick('btnCScriptUsePre', () => buildPythonScriptProcessorSpec('c', 'pre'));
+    bindClick('btnCScriptUsePost', () => buildPythonScriptProcessorSpec('c', 'post'));
+    bindClick('btnCPresetSave', () => saveProcessorPreset('c'));
+    bindClick('btnCPresetLoad', () => applyProcessorPreset('c'));
+    bindClick('btnCPresetDelete', () => deleteProcessorPreset('c'));
+    bindClick('btnCPromptSave', () => savePromptBankItem('c'));
+    bindClick('btnCPromptLoad', () => loadPromptBankItem('c'));
+    bindClick('btnCPromptDelete', () => deletePromptBankItem('c'));
+    bindClick('btnChatGenerate', submitChat);
+
+    bindClick('btnSaveJson', saveJSON);
+    bindClick('btnCopyResult', copyResultToClipboard);
+    bindClick('btnClearResults', clearResults);
+}
+
+export async function bootstrapUI() {
+    logger.info('Bootstrapping UI');
+    bindUIEvents();
     enableTabPlaceholderCompletion();
     await loadUiState();
     refreshProcessorPresetSelectors();
@@ -1062,6 +877,7 @@ async function bootstrapUI() {
     }
     for (const prefix of ['g', 'c']) {
         renderScriptConfigEntries(prefix);
+        renderScriptTemplateOptions(prefix);
         initScriptBuilderDnD(prefix);
     }
     for (const id of ['g_file', 'c_file']) {
@@ -1073,5 +889,3 @@ async function bootstrapUI() {
     addActivity('info', 'UI initialized.');
     refresh();
 }
-
-bootstrapUI();

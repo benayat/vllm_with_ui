@@ -19,12 +19,12 @@
             <div><label for="gpu">GPU (optional)</label><br><input id="gpu" type="number" min="0" class="w-90" placeholder="e.g. 0"/></div>
             <div><label for="cfg">vLLM config JSON</label><br><textarea id="cfg" rows="10" cols="62" class="mono">__DEFAULT_CFG__</textarea><br><small class="muted">Contract: use <code>model_impl</code> ("vllm" or "transformers"); <code>use_transformers</code> is no longer supported.</small></div>
             <div class="row">
-                <button onclick="startModel()">Start</button>
-                <form onsubmit="stopWorker(event)">
+                <button id="btnStartModel" type="button">Start</button>
+                <form id="stopWorkerForm">
                     <select id="s_target" class="minw-340" aria-label="Deployed model to stop">
                         <option value="">— select deployed model —</option>
                     </select>
-                    <button type="submit">Stop</button>
+                    <button id="btnStopWorker" type="submit">Stop</button>
                 </form>
                 <span id="start_msg" class="muted" role="status" aria-live="polite"></span>
             </div>
@@ -34,8 +34,8 @@
     <section class="card" aria-labelledby="status-title">
         <h3 id="status-title">Status & Live GPU tail</h3>
         <div class="row">
-            <button onclick="refresh()">Refresh</button>
-            <select id="workerSel" onchange="switchWorker()"></select>
+            <button id="btnRefreshStatus" type="button">Refresh</button>
+            <select id="workerSel"></select>
         </div>
         <div id="statusSummary" class="summary-grid"></div>
         <div id="statusHint" class="hint muted" role="status" aria-live="polite"></div>
@@ -52,8 +52,8 @@
 
     <div class="card" id="generate">
         <div class="tabbar">
-            <button id="tabSimple" class="tab-active" onclick="switchTab('simple')">Generate: Simple</button>
-            <button id="tabChat" onclick="switchTab('chat')">Generate: Chat</button>
+            <button id="tabSimple" class="tab-active" type="button">Generate: Simple</button>
+            <button id="tabChat" type="button">Generate: Chat</button>
         </div>
 
         <!-- Simple -->
@@ -85,19 +85,19 @@
                             <div><label class="muted" for="g_max_tokens">Max tokens</label><br><input id="g_max_tokens" type="number" step="1" min="1" value="256"/></div>
                         </div>
                         <div class="mt-8 row">
-                            <button type="button" onclick="applySamplingForm('g')">Apply form values to JSON</button>
-                            <button type="button" onclick="syncSamplingFormFromJson('g')">Load values from JSON</button>
+                            <button type="button" id="btnGApplySampling">Apply form values to JSON</button>
+                            <button type="button" id="btnGSyncSampling">Load values from JSON</button>
                         </div>
                         <textarea id="g_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
                         <span id="g_sampling_status" class="field-status muted">Not validated yet.</span>
                         <div class="mt-8 row">
                             <input id="g_sampling_bank_name" size="18" placeholder="Sampling preset name"/>
-                            <button type="button" onclick="saveSamplingBankItem('g')">Save</button>
+                            <button type="button" id="btnGSamplingSave">Save</button>
                         </div>
                         <div class="mt-8 row">
                             <select id="g_sampling_bank_select" class="minw-220"></select>
-                            <button type="button" onclick="loadSamplingBankItem('g')">Load</button>
-                            <button type="button" onclick="deleteSamplingBankItem('g')">Delete</button>
+                            <button type="button" id="btnGSamplingLoad">Load</button>
+                            <button type="button" id="btnGSamplingDelete">Delete</button>
                         </div>
                         <div class="mt-8">
                             <label><input id="g_include_metadata" type="checkbox" checked/> Include metadata in output rows</label>
@@ -108,6 +108,12 @@
                         <summary>Advanced options</summary>
                         <div class="fieldset mt-8">
                             <label><b>Quick script builder (optional)</b></label><br>
+                            <div class="mt-8">
+                                <label class="muted" for="g_pp_template_select">Template library</label><br>
+                                <select id="g_pp_template_select" class="minw-340"></select>
+                                <div id="g_pp_template_desc" class="hint muted">No template selected.</div>
+                                <div id="g_pp_template_params" class="template-param-grid mt-8"></div>
+                            </div>
                             <textarea id="g_pp_script_code" rows="8" cols="40" class="mono" placeholder='def process(generation_json, config):&#10;    # Return any JSON-serializable object&#10;    return generation_json'></textarea>
                             <div class="mt-8">
                                 <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
@@ -122,7 +128,7 @@
                                     <option value="json">json</option>
                                 </select>
                                 <input id="g_pp_cfg_value" size="20" placeholder="config value"/>
-                                <button type="button" onclick="addScriptConfigEntry('g')">Add config entry</button>
+                                <button type="button" id="btnGScriptAddConfig">Add config entry</button>
                             </div>
                             <div id="g_pp_cfg_rows" class="script-config-rows"></div>
                             <div class="muted mt-8">Drag the script card into a target zone.</div>
@@ -136,8 +142,8 @@
                             </div>
                             <div class="mt-8 row">
                                 <input id="g_pp_script_entrypoint" size="16" value="process"/>
-                                <button type="button" onclick="buildPythonScriptProcessorSpec('g', 'pre')">Use script as pre-processor</button>
-                                <button type="button" onclick="buildPythonScriptProcessorSpec('g', 'post')">Use script as post-processor</button>
+                                <button type="button" id="btnGScriptUsePre">Use script as pre-processor</button>
+                                <button type="button" id="btnGScriptUsePost">Use script as post-processor</button>
                             </div>
                         </div>
                         <div class="fieldset mt-8">
@@ -151,12 +157,12 @@
                             <span id="g_post_processor_status" class="field-status muted">Optional.</span>
                             <div class="mt-8 row">
                                 <input id="g_pp_preset_name" size="18" placeholder="Preset name"/>
-                                <button type="button" onclick="saveProcessorPreset('g')">Save preset</button>
+                                <button type="button" id="btnGPresetSave">Save preset</button>
                             </div>
                             <div class="mt-8 row">
                                 <select id="g_pp_preset_select" class="minw-220"></select>
-                                <button type="button" onclick="applyProcessorPreset('g')">Load</button>
-                                <button type="button" onclick="deleteProcessorPreset('g')">Delete</button>
+                                <button type="button" id="btnGPresetLoad">Load</button>
+                                <button type="button" id="btnGPresetDelete">Delete</button>
                             </div>
                         </div>
                     </details>
@@ -168,18 +174,18 @@
                         <span id="g_prompt_status" class="field-status muted">Not validated yet.</span>
                         <div class="mt-8 row">
                             <input id="g_prompt_bank_name" size="18" placeholder="Prompt preset name"/>
-                            <button type="button" onclick="savePromptBankItem('g')">Save</button>
+                            <button type="button" id="btnGPromptSave">Save</button>
                         </div>
                         <div class="mt-8 row">
                             <select id="g_prompt_bank_select" class="minw-220"></select>
-                            <button type="button" onclick="loadPromptBankItem('g')">Load</button>
-                            <button type="button" onclick="deletePromptBankItem('g')">Delete</button>
+                            <button type="button" id="btnGPromptLoad">Load</button>
+                            <button type="button" id="btnGPromptDelete">Delete</button>
                         </div>
                     </div>
                     <div class="fieldset">
                         <label><b>OR Upload prompts JSON</b></label><br>
                         <input id="g_file" type="file" accept=".json"/>
-                        <div class="mt-8"><button id="btnSimpleGenerate" onclick="submitSimple()">Generate</button> <span id="g_msg" class="muted" role="status" aria-live="polite"></span></div>
+                        <div class="mt-8"><button id="btnSimpleGenerate" type="button">Generate</button> <span id="g_msg" class="muted" role="status" aria-live="polite"></span></div>
                     </div>
                 </div>
             </div>
@@ -214,19 +220,19 @@
                             <div><label class="muted" for="c_max_tokens">Max tokens</label><br><input id="c_max_tokens" type="number" step="1" min="1" value="256"/></div>
                         </div>
                         <div class="mt-8 row">
-                            <button type="button" onclick="applySamplingForm('c')">Apply form values to JSON</button>
-                            <button type="button" onclick="syncSamplingFormFromJson('c')">Load values from JSON</button>
+                            <button type="button" id="btnCApplySampling">Apply form values to JSON</button>
+                            <button type="button" id="btnCSyncSampling">Load values from JSON</button>
                         </div>
                         <textarea id="c_sampling" rows="6" cols="40" class="mono">{ "temperature": 0.0, "top_p": 1.0, "max_tokens": 256 }</textarea>
                         <span id="c_sampling_status" class="field-status muted">Not validated yet.</span>
                         <div class="mt-8 row">
                             <input id="c_sampling_bank_name" size="18" placeholder="Sampling preset name"/>
-                            <button type="button" onclick="saveSamplingBankItem('c')">Save</button>
+                            <button type="button" id="btnCSamplingSave">Save</button>
                         </div>
                         <div class="mt-8 row">
                             <select id="c_sampling_bank_select" class="minw-220"></select>
-                            <button type="button" onclick="loadSamplingBankItem('c')">Load</button>
-                            <button type="button" onclick="deleteSamplingBankItem('c')">Delete</button>
+                            <button type="button" id="btnCSamplingLoad">Load</button>
+                            <button type="button" id="btnCSamplingDelete">Delete</button>
                         </div>
                     </div>
 
@@ -234,6 +240,12 @@
                         <summary>Advanced options</summary>
                         <div class="fieldset mt-8">
                             <label><b>Quick script builder (optional)</b></label><br>
+                            <div class="mt-8">
+                                <label class="muted" for="c_pp_template_select">Template library</label><br>
+                                <select id="c_pp_template_select" class="minw-340"></select>
+                                <div id="c_pp_template_desc" class="hint muted">No template selected.</div>
+                                <div id="c_pp_template_params" class="template-param-grid mt-8"></div>
+                            </div>
                             <textarea id="c_pp_script_code" rows="8" cols="40" class="mono" placeholder='def process(generation_json, config):&#10;    # Return any JSON-serializable object&#10;    return generation_json'></textarea>
                             <div class="mt-8">
                                 <label class="muted">Dependencies (comma-separated, e.g. scipy,numpy)</label><br>
@@ -248,7 +260,7 @@
                                     <option value="json">json</option>
                                 </select>
                                 <input id="c_pp_cfg_value" size="20" placeholder="config value"/>
-                                <button type="button" onclick="addScriptConfigEntry('c')">Add config entry</button>
+                                <button type="button" id="btnCScriptAddConfig">Add config entry</button>
                             </div>
                             <div id="c_pp_cfg_rows" class="script-config-rows"></div>
                             <div class="muted mt-8">Drag the script card into a target zone.</div>
@@ -262,8 +274,8 @@
                             </div>
                             <div class="mt-8 row">
                                 <input id="c_pp_script_entrypoint" size="16" value="process"/>
-                                <button type="button" onclick="buildPythonScriptProcessorSpec('c', 'pre')">Use script as pre-processor</button>
-                                <button type="button" onclick="buildPythonScriptProcessorSpec('c', 'post')">Use script as post-processor</button>
+                                <button type="button" id="btnCScriptUsePre">Use script as pre-processor</button>
+                                <button type="button" id="btnCScriptUsePost">Use script as post-processor</button>
                             </div>
                         </div>
                         <div class="fieldset mt-8">
@@ -277,12 +289,12 @@
                             <span id="c_post_processor_status" class="field-status muted">Optional.</span>
                             <div class="mt-8 row">
                                 <input id="c_pp_preset_name" size="18" placeholder="Preset name"/>
-                                <button type="button" onclick="saveProcessorPreset('c')">Save preset</button>
+                                <button type="button" id="btnCPresetSave">Save preset</button>
                             </div>
                             <div class="mt-8 row">
                                 <select id="c_pp_preset_select" class="minw-220"></select>
-                                <button type="button" onclick="applyProcessorPreset('c')">Load</button>
-                                <button type="button" onclick="deleteProcessorPreset('c')">Delete</button>
+                                <button type="button" id="btnCPresetLoad">Load</button>
+                                <button type="button" id="btnCPresetDelete">Delete</button>
                             </div>
                         </div>
                     </details>
@@ -294,18 +306,18 @@
                         <span id="c_msgs_status" class="field-status muted">Not validated yet.</span>
                         <div class="mt-8 row">
                             <input id="c_prompt_bank_name" size="18" placeholder="Prompt preset name"/>
-                            <button type="button" onclick="savePromptBankItem('c')">Save</button>
+                            <button type="button" id="btnCPromptSave">Save</button>
                         </div>
                         <div class="mt-8 row">
                             <select id="c_prompt_bank_select" class="minw-220"></select>
-                            <button type="button" onclick="loadPromptBankItem('c')">Load</button>
-                            <button type="button" onclick="deletePromptBankItem('c')">Delete</button>
+                            <button type="button" id="btnCPromptLoad">Load</button>
+                            <button type="button" id="btnCPromptDelete">Delete</button>
                         </div>
                     </div>
                     <div class="fieldset">
                         <label><b>OR Upload chat JSON file</b></label><br>
                         <input id="c_file" type="file" accept=".json"/>
-                        <div class="mt-8"><button id="btnChatGenerate" onclick="submitChat()">Generate</button> <span id="c_msg" class="muted" role="status" aria-live="polite"></span></div>
+                        <div class="mt-8"><button id="btnChatGenerate" type="button">Generate</button> <span id="c_msg" class="muted" role="status" aria-live="polite"></span></div>
                     </div>
                 </div>
                 <div class="stack minw-260">
@@ -324,9 +336,9 @@
     <section class="card" id="results" aria-labelledby="results-title">
         <h3 id="results-title">Response</h3>
         <div class="row">
-            <button onclick="saveJSON()">Save as JSON</button>
-            <button onclick="copyResultToClipboard()">Copy to clipboard</button>
-            <button onclick="clearResults()">Clear</button>
+            <button id="btnSaveJson" type="button">Save as JSON</button>
+            <button id="btnCopyResult" type="button">Copy to clipboard</button>
+            <button id="btnClearResults" type="button">Clear</button>
         </div>
         <div id="resultSummary" class="summary-grid"></div>
         <pre id="resultBox" class="mono"></pre>
@@ -334,6 +346,6 @@
 </main>
 
 <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
-<script src="/static/app.js"></script>
+<script type="module" src="/static/app/main.js"></script>
 </body>
 </html>
