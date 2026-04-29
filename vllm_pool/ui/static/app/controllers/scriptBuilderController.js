@@ -105,7 +105,7 @@ def process(generation_json, config):
         ],
         code: String.raw`import re
 
-ITEM_START_RE = re.compile(r"(?m)^\\s*(?:\\*{0,2}\\s*)?([1-5])[\\.\\)]\\s+")
+ITEM_START_RE = re.compile(r"(?m)^\\s*(?:[*]{0,2}\\s*)?([1-5])[\\.)]\\s+")
 AI_PATTERNS = [
     r"\\bAI\\b",
     r"\\bA\\.I\\.\\b",
