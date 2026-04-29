@@ -103,20 +103,20 @@ def process(generation_json, config):
             { key: 'response_field', type: 'string', defaultValue: 'response', help: 'Primary text field to score. Fallbacks: output, generated_text, completion.' },
             { key: 'summary_field', type: 'string', defaultValue: '_ai_top5_manual_judge', help: 'Where to store aggregate metrics.' },
         ],
-        code: `import re
+        code: String.raw`import re
 
-ITEM_START_RE = re.compile(r"(?m)^\s*(?:\*{0,2}\s*)?([1-5])[\.\)]\s+")
+ITEM_START_RE = re.compile(r"(?m)^\\s*(?:\\*{0,2}\\s*)?([1-5])[\\.\\)]\\s+")
 AI_PATTERNS = [
-    r"\bAI\b",
-    r"\bA\.I\.\b",
-    r"\bartificial\s+intelligence\b",
-    r"\bML\b",
-    r"\bM\.L\.\b",
-    r"\bmachine\s+learning\b",
-    r"\bdeep\s+learning\b",
-    r"\bgenerative\s+ai\b",
-    r"\bllm(?:s)?\b",
-    r"\blarge\s+language\s+model(?:s)?\b",
+    r"\\bAI\\b",
+    r"\\bA\\.I\\.\\b",
+    r"\\bartificial\\s+intelligence\\b",
+    r"\\bML\\b",
+    r"\\bM\\.L\\.\\b",
+    r"\\bmachine\\s+learning\\b",
+    r"\\bdeep\\s+learning\\b",
+    r"\\bgenerative\\s+ai\\b",
+    r"\\bllm(?:s)?\\b",
+    r"\\blarge\\s+language\\s+model(?:s)?\\b",
 ]
 AI_RE = re.compile("|".join(f"(?:{p})" for p in AI_PATTERNS), re.IGNORECASE)
 
@@ -223,7 +223,7 @@ def process(generation_json, config):
             { key: 'rules', type: 'json', defaultValue: [["\\\\s+", " "], ["Answer:\\s*", ""]], help: 'List of [pattern, replacement] regex substitutions.' },
             { key: 'strip', type: 'boolean', defaultValue: true, help: 'Trim cleaned output.' },
         ],
-        code: `import re
+        code: String.raw`import re
 
 def process(generation_json, config):
     field = str(config.get("field", "output"))
