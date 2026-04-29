@@ -100,8 +100,7 @@ def process(generation_json, config):
         dependencies: [],
         entrypoint: 'process',
         configSchema: [
-            { key: 'response_field', type: 'string', defaultValue: 'response', help: 'Primary text field to score. Fallbacks: output, generated_text, completion.' },
-            { key: 'summary_field', type: 'string', defaultValue: '_ai_top5_manual_judge', help: 'Where to store aggregate metrics.' },
+            { key: 'response_field', type: 'string', defaultValue: 'response', help: 'Primary text field to score. Fallbacks: output, generated_text, completion, message.content.' },
         ],
         code: String.raw`import re
 
@@ -156,10 +155,27 @@ def earliest_ai_rank(text):
 
 
 def resolve_response_text(row, preferred_field):
+    if isinstance(row, str) and row.strip():
+        return row
     if not isinstance(row, dict):
         return ""
+
+    if preferred_field == "message.content":
+        msg = row.get("message")
+        if isinstance(msg, dict):
+            content = msg.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+
     candidates = [preferred_field, "response", "output", "generated_text", "completion"]
     for field in candidates:
+        if field == "message.content":
+            msg = row.get("message")
+            if isinstance(msg, dict):
+                value = msg.get("content")
+                if isinstance(value, str) and value.strip():
+                    return value
+            continue
         value = row.get(field)
         if isinstance(value, str) and value.strip():
             return value
@@ -168,8 +184,6 @@ def resolve_response_text(row, preferred_field):
 
 def process(generation_json, config):
     response_field = str(config.get("response_field", "response"))
-    summary_field = str(config.get("summary_field", "_ai_top5_manual_judge"))
-
     rows = generation_json if isinstance(generation_json, list) else [generation_json]
     parseable = 0
     top5_hits = 0
@@ -206,9 +220,7 @@ def process(generation_json, config):
         },
     }
 
-    if rows and isinstance(rows[0], dict):
-        rows[0][summary_field] = summary
-    return {"rows": generation_json, "manual_judge": summary, "judged_rows": judged_rows}
+    return {"manual_judge": summary, "judged_rows": judged_rows}
 `,
     },
     {

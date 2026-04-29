@@ -154,8 +154,23 @@ function saveJSON(){
 }
 async function copyResultToClipboard() {
     if (!lastResult) { notify('info', 'No result available to copy yet.'); return; }
+    const textToCopy = JSON.stringify(lastResult, null, 2);
     try {
-        await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2));
+        if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(textToCopy);
+        } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = textToCopy;
+            textArea.setAttribute('readonly', '');
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const copied = document.execCommand('copy');
+            textArea.remove();
+            if (!copied) throw new Error('Clipboard API unavailable and fallback copy failed.');
+        }
         notify('ok', 'Copied result JSON to clipboard.');
     } catch (e) {
         notify('err', `Copy failed: ${e.message}`);
