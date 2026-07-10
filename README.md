@@ -453,3 +453,25 @@ Suggested tests (pytest):
 ## License
 
 MIT (or your choice). Add your license text here.
+
+### Terminal UI on a compute node
+
+For environments where opening the browser UI is inconvenient, run the terminal UI directly on the node that owns the GPUs:
+
+```bash
+vllm-pool-tui
+# or, from a checkout
+python -m vllm_pool.tui
+```
+
+The terminal UI exposes the same operational workflow as the web UI without requiring SSH port forwarding:
+
+* start and stop vLLM workers with editable resource-configuration JSON;
+* inspect GPU count, worker PIDs, worker busy state, and per-model queue depths;
+* subscribe to a per-worker live tail;
+* submit simple, chat, and offline generation jobs;
+* configure sampling JSON, output field, metadata inclusion, model cleanup for offline jobs, and pre/post-processor specs;
+* edit the same server-side processor preset, prompt bank, and sampling bank storage used by the web UI;
+* view and save generation result JSON.
+
+JSON inputs open in `$EDITOR` and default to `nano` when `$EDITOR` is unset. You can prefill the model and GPU fields with `VLLM_TUI_MODEL` and `VLLM_TUI_GPU`; the maximum worker count defaults to `4` and can be overridden with `VLLM_POOL_MAX_WORKERS`.
