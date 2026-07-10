@@ -16,5 +16,15 @@ factory = true
 host = "0.0.0.0"
 port = 8000
 
+[tool.uv]
+package = true
+
 [project.scripts]
 vllm-pool-tui = "vllm_pool.tui:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["vllm_pool*"]
