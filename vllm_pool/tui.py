@@ -751,6 +751,8 @@ class TerminalUI:
         lines = value.splitlines() or [""]
         row = col = top = left = 0
         saved_cursor = False
+        curses.raw()  # Receive Ctrl+S/Ctrl+Q instead of terminal XOFF/XON flow control.
+        self.stdscr.keypad(True)
         try:
             curses.curs_set(1)
             saved_cursor = True
@@ -770,7 +772,7 @@ class TerminalUI:
                     left = col - body_w + 1
 
                 self._line(0, 0, f"Edit {title}", curses.A_BOLD)
-                controls = "Ctrl+S save | Ctrl+Q cancel | arrows move | Enter new line"
+                controls = "F2/Ctrl+S save | Esc/Ctrl+Q cancel | arrows move | Enter new line"
                 self._line(1, 0, controls[: width - 1], curses.A_REVERSE)
                 for screen_row, text in enumerate(lines[top : top + body_h], start=2):
                     self._line(screen_row, 0, text[left : left + body_w])
@@ -785,10 +787,10 @@ class TerminalUI:
                 ch = self.stdscr.getch()
                 if ch < 0:
                     continue
-                if ch == 19:  # Ctrl+S
+                if ch in (curses.KEY_F2, 19):  # F2 or Ctrl+S
                     self.message = f"Edited {title}."
                     return "\n".join(lines)
-                if ch == 17:  # Ctrl+Q
+                if ch in (27, 17):  # Esc or Ctrl+Q
                     self.message = f"Canceled editing {title}."
                     return value
                 if ch == curses.KEY_UP:
@@ -841,6 +843,7 @@ class TerminalUI:
                     lines[row] = lines[row][:col] + character + lines[row][col:]
                     col += 1
         finally:
+            curses.cbreak()
             if saved_cursor:
                 try:
                     curses.curs_set(0)
@@ -884,7 +887,7 @@ Terminal UI capabilities
 - Save/load processor presets, prompt banks, and sampling banks.
 - Inspect, wait for, cancel queued jobs, and save result JSON.
 
-JSON editing uses the built-in editor: arrows move, Ctrl+S saves, and Ctrl+Q cancels.
+JSON editing uses the built-in editor: arrows move, F2/Ctrl+S saves, and Esc/Ctrl+Q cancels.
 Set $EDITOR to use an external editor such as nano or vi instead.
 Prompt files use the same shapes as the browser UI: simple arrays of {prompt, metadata?}; chat arrays of {messages, metadata?}.
 """.strip())
