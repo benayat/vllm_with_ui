@@ -726,7 +726,9 @@ class TerminalUI:
             return value
 
     def _edit_text(self, title: str, value: str, suffix: str = ".txt") -> str:
-        editor = os.getenv("EDITOR", "nano")
+        editor = os.getenv("EDITOR", "").strip()
+        if not editor:
+            return self._edit_text_builtin(title, value)
         with tempfile.NamedTemporaryFile("w+", suffix=suffix, delete=False) as tmp:
             tmp.write(value)
             path = tmp.name
@@ -737,10 +739,113 @@ class TerminalUI:
         finally:
             curses.reset_prog_mode()
             self.stdscr.keypad(True)
-        text = Path(path).read_text(encoding="utf-8")
-        Path(path).unlink(missing_ok=True)
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        finally:
+            Path(path).unlink(missing_ok=True)
         self.message = f"Edited {title}."
         return text
+
+    def _edit_text_builtin(self, title: str, value: str) -> str:
+        """Small dependency-free editor for JSON and other TUI text buffers."""
+        lines = value.splitlines() or [""]
+        row = col = top = left = 0
+        saved_cursor = False
+        try:
+            curses.curs_set(1)
+            saved_cursor = True
+        except curses.error:
+            pass
+        try:
+            while True:
+                self.stdscr.erase()
+                height, width = self.stdscr.getmaxyx()
+                body_h = max(1, height - 3)
+                body_w = max(1, width - 1)
+                top = min(top, row)
+                if row >= top + body_h:
+                    top = row - body_h + 1
+                left = min(left, col)
+                if col >= left + body_w:
+                    left = col - body_w + 1
+
+                self._line(0, 0, f"Edit {title}", curses.A_BOLD)
+                controls = "Ctrl+S save | Ctrl+Q cancel | arrows move | Enter new line"
+                self._line(1, 0, controls[: width - 1], curses.A_REVERSE)
+                for screen_row, text in enumerate(lines[top : top + body_h], start=2):
+                    self._line(screen_row, 0, text[left : left + body_w])
+                position = f"Ln {row + 1}, Col {col + 1}"
+                self._line(height - 1, max(0, width - len(position) - 1), position)
+                try:
+                    self.stdscr.move(2 + row - top, col - left)
+                except curses.error:
+                    pass
+                self.stdscr.refresh()
+
+                ch = self.stdscr.getch()
+                if ch < 0:
+                    continue
+                if ch == 19:  # Ctrl+S
+                    self.message = f"Edited {title}."
+                    return "\n".join(lines)
+                if ch == 17:  # Ctrl+Q
+                    self.message = f"Canceled editing {title}."
+                    return value
+                if ch == curses.KEY_UP:
+                    row = max(0, row - 1)
+                    col = min(col, len(lines[row]))
+                elif ch == curses.KEY_DOWN:
+                    row = min(len(lines) - 1, row + 1)
+                    col = min(col, len(lines[row]))
+                elif ch == curses.KEY_LEFT:
+                    if col:
+                        col -= 1
+                    elif row:
+                        row -= 1
+                        col = len(lines[row])
+                elif ch == curses.KEY_RIGHT:
+                    if col < len(lines[row]):
+                        col += 1
+                    elif row < len(lines) - 1:
+                        row += 1
+                        col = 0
+                elif ch == curses.KEY_HOME:
+                    col = 0
+                elif ch == curses.KEY_END:
+                    col = len(lines[row])
+                elif ch in (curses.KEY_BACKSPACE, 8, 127):
+                    if col:
+                        lines[row] = lines[row][: col - 1] + lines[row][col:]
+                        col -= 1
+                    elif row:
+                        previous_length = len(lines[row - 1])
+                        lines[row - 1] += lines.pop(row)
+                        row -= 1
+                        col = previous_length
+                elif ch == curses.KEY_DC:
+                    if col < len(lines[row]):
+                        lines[row] = lines[row][:col] + lines[row][col + 1 :]
+                    elif row < len(lines) - 1:
+                        lines[row] += lines.pop(row + 1)
+                elif ch in (10, 13):
+                    remainder = lines[row][col:]
+                    lines[row] = lines[row][:col]
+                    lines.insert(row + 1, remainder)
+                    row += 1
+                    col = 0
+                elif ch == 9:
+                    lines[row] = lines[row][:col] + "  " + lines[row][col:]
+                    col += 2
+                elif 32 <= ch <= 255:
+                    character = chr(ch)
+                    lines[row] = lines[row][:col] + character + lines[row][col:]
+                    col += 1
+        finally:
+            if saved_cursor:
+                try:
+                    curses.curs_set(0)
+                except curses.error:
+                    pass
 
     def show_json(self, title: str, value: JsonValue) -> None:
         self.show_text(title, json.dumps(value, indent=2, ensure_ascii=False))
@@ -779,7 +884,8 @@ Terminal UI capabilities
 - Save/load processor presets, prompt banks, and sampling banks.
 - Inspect, wait for, cancel queued jobs, and save result JSON.
 
-JSON editing opens $EDITOR and defaults to nano when unset.
+JSON editing uses the built-in editor: arrows move, Ctrl+S saves, and Ctrl+Q cancels.
+Set $EDITOR to use an external editor such as nano or vi instead.
 Prompt files use the same shapes as the browser UI: simple arrays of {prompt, metadata?}; chat arrays of {messages, metadata?}.
 """.strip())
 
