@@ -1,5 +1,5 @@
 from __future__ import annotations
-import time, threading, uuid, multiprocessing as mp
+import re, time, threading, uuid, multiprocessing as mp
 from typing import Dict, Any, Tuple, Optional, List
 import torch
 from .worker import worker_loop
@@ -134,7 +134,14 @@ class PoolManager:
                 break
             typ = msg.get("type")
             if typ == "tail":
-                self._broadcast_tail(key, msg.get("lines", []))
+                lines = msg.get("lines", [])
+                self._broadcast_tail(key, lines)
+                job_id = info.get("active_job_id")
+                rec = self.jobs.get(job_id)
+                if rec:
+                    tqdm_lines = [line for line in lines if re.search(r"\d{1,3}%\|", str(line))]
+                    if tqdm_lines:
+                        rec["tqdm"] = str(tqdm_lines[-1])
             elif typ == "result":
                 job_id = msg.get("job_id")
                 rec = self.jobs.get(job_id)
@@ -146,6 +153,7 @@ class PoolManager:
                     rec["event"].set()
                     should_cleanup_model = rec.get("cleanup_model_after_job", False)
                 self.busy[(model, gpu_id)] = False
+                info["active_job_id"] = None
                 self._dispatch_next(model)
                 if should_cleanup_model:
                     self._cleanup_model_if_idle(model, gpu_id)
@@ -161,6 +169,7 @@ class PoolManager:
                     rec["event"].set()
                     should_cleanup_model = rec.get("cleanup_model_after_job", False)
                 self.busy[(model, gpu_id)] = False
+                info["active_job_id"] = None
                 self._dispatch_next(model)
                 if should_cleanup_model:
                     self._cleanup_model_if_idle(model, gpu_id)
@@ -217,6 +226,7 @@ class PoolManager:
     def _send(self, job: Dict[str, Any], gpu_id: int):
         info = self.workers[(job["model_name"], gpu_id)]
         self.busy[(job["model_name"], gpu_id)] = True
+        info["active_job_id"] = job["job_id"]
         rec = self.jobs.get(job["job_id"])
         if rec:
             rec["status"] = "running"
@@ -289,6 +299,8 @@ class PoolManager:
         if not rec:
             return {"job_id": job_id, "status": "not_found"}
         view = {"job_id": job_id, "status": rec["status"]}
+        if rec.get("tqdm"):
+            view["tqdm"] = rec["tqdm"]
         if rec["status"] == "done":
             view["result"] = rec["result"]
         if rec["status"] == "error":

@@ -144,20 +144,19 @@ class TerminalUI:
         for idx, (label, value) in enumerate(rows):
             self._line(y + idx, x, f"{label}: {value}"[:width])
 
-        y += len(rows) + 2
-        groups: Dict[str, List[Command]] = {}
-        for command in COMMANDS:
-            groups.setdefault(command.group, []).append(command)
-        for group, commands in groups.items():
-            if y >= curses.LINES - 4:
-                break
-            self._line(y, x, group, curses.A_BOLD)
-            y += 1
-            for command in commands:
-                if y >= curses.LINES - 4:
-                    break
-                self._line(y, x + 1, f"{command.key}  {command.label}"[: max(1, width - 1)])
-                y += 1
+        y += len(rows) + 1
+        columns = 2 if width >= 30 else 1
+        column_width = max(1, width // columns)
+        rows_per_column = (len(COMMANDS) + columns - 1) // columns
+        for index, command in enumerate(COMMANDS):
+            column = index // rows_per_column
+            command_row = index % rows_per_column
+            draw_y = y + command_row
+            if draw_y >= curses.LINES - 3:
+                continue
+            draw_x = x + column * column_width
+            label = f"{command.key} {command.label}"
+            self._line(draw_y, draw_x, label[: max(1, column_width - 1)])
 
     def _draw_status_panel(self, y: int, x: int, width: int, height: int) -> None:
         status = self.cached_status or {}
@@ -894,43 +893,36 @@ Prompt files use the same shapes as the browser UI: simple arrays of {prompt, me
 
     def _wait_for_job(self, jid: str) -> None:
         started = time.monotonic()
-        tick = 0
         while True:
             rec = self.pool.get_job(jid)
             status = str(rec.get("status", "unknown"))
             elapsed = time.monotonic() - started
-            self._draw_job_progress(jid, status, elapsed, tick)
+            self._draw_job_progress(jid, status, elapsed, rec.get("tqdm"))
             if status in {"done", "error", "canceled", "not_found"}:
                 self.last_result = rec
                 self.message = f"Job {jid}: {status} ({elapsed:.1f}s)"
                 return
-            tick += 1
             time.sleep(0.5)
 
-    def _draw_job_progress(self, jid: str, status: str, elapsed: float, tick: int) -> None:
-        """Draw a prominent status bar for a job without inventing a percentage."""
+    def _draw_job_progress(self, jid: str, status: str, elapsed: float, tqdm_line: Optional[str]) -> None:
+        """Display tqdm's real progress output for the active worker job."""
         self.stdscr.erase()
         height, width = self.stdscr.getmaxyx()
-        bar_width = max(10, min(60, width - 12))
-        if status == "done":
-            bar_text = "=" * bar_width
-        elif status == "running":
-            span = max(1, bar_width // 5)
-            offset = tick % max(1, bar_width - span + 1)
-            bar = [" "] * bar_width
-            bar[offset : offset + span] = ["="] * span
-            bar_text = "".join(bar)
-        else:
-            fill = max(1, bar_width // 12)
-            bar_text = "=" * fill + " " * (bar_width - fill)
-
         y = max(1, height // 2 - 3)
         heading = f"Job {jid}"
         self._line(y, max(0, (width - len(heading)) // 2), heading, curses.A_BOLD)
-        self._line(y + 2, max(0, (width - bar_width - 2) // 2), f"[{bar_text}]")
         detail = f"{status.upper()}  |  elapsed {elapsed:.1f}s"
-        self._line(y + 4, max(0, (width - len(detail)) // 2), detail, curses.A_BOLD)
-        note = "Animated while running; the backend does not report an exact token percentage."
+        self._line(y + 2, max(0, (width - len(detail)) // 2), detail, curses.A_BOLD)
+        if tqdm_line:
+            progress = str(tqdm_line).strip()
+            self._line(y + 4, max(0, (width - min(len(progress), width - 1)) // 2), progress[: width - 1])
+            note = "Live tqdm output from the vLLM worker"
+        elif status == "running":
+            note = "Waiting for the worker's first tqdm update..."
+        elif status in {"queued", "queued_offline"}:
+            note = "Queued; tqdm starts when a worker begins processing this job."
+        else:
+            note = "No tqdm progress was reported for this job."
         self._line(height - 2, 0, note[: width - 1])
         self.stdscr.refresh()
 
